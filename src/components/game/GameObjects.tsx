@@ -85,10 +85,12 @@ export const CameraFollow: React.FC<CameraFollowProps> = ({ target }) => {
   const { camera } = useThree();
 
   useFrame(() => {
-    const cam = camera as THREE.OrthographicCamera;
-    cam.position.x += (target.x - cam.position.x) * 0.1;
-    cam.position.y += (-target.y - cam.position.y) * 0.1;
-    cam.position.z = 10;
+    const cam = camera as THREE.Camera;
+    const nextX = cam.position.x + (target.x - cam.position.x) * 0.1;
+    const nextY = cam.position.y + (-target.y - cam.position.y) * 0.1;
+
+    cam.position.set(nextX, nextY, 10);
+    cam.lookAt(nextX, nextY, 0);
   });
 
   return null;
