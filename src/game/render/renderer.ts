@@ -1,5 +1,4 @@
 import * as THREE from "three"
-import { Color } from "../assets/Color"
 import { Chunks } from "./Chunks"
 import { LightMaterial } from "./materials/LightMaterial"
 import { SpriteMaterial } from "./materials/SpriteMaterial"
@@ -334,6 +333,7 @@ export class Renderer {
         }
 
         const { mesh, frameAttr, flipAttr, tintAttr, alphaAttr } = chunkMesh
+        const tintArray = tintAttr.array as Float32Array
         let count = 0
         for (const tile of chunk.tiles) {
             if (count >= TILE_BATCH_CAPACITY) break
@@ -344,10 +344,14 @@ export class Renderer {
             )
             mesh.setMatrixAt(count, this.scratchMatrix)
 
-            const tint = Color.unpack(tile.tintCode)
             frameAttr.setX(count, tile.tileId + tile.variant)
             flipAttr.setX(count, tile.flipBits)
-            tintAttr.setXYZW(count, tint[0], tint[1], tint[2], tint[3])
+            const base = count * 4
+            const tintCode = tile.tintCode
+            tintArray[base] = tintCode & 255
+            tintArray[base + 1] = (tintCode >>> 8) & 255
+            tintArray[base + 2] = (tintCode >>> 16) & 255
+            tintArray[base + 3] = (tintCode >>> 24) & 255
             alphaAttr.setX(count, 1)
             count += 1
         }
@@ -368,6 +372,7 @@ export class Renderer {
         if (!this.worldSpriteBatch) return
 
         const count = Math.min(sprites.length, this.worldSpriteBatch.maxInstances)
+        const tintArray = this.worldSpriteBatch.tintAttr.array as Float32Array
         for (let i = 0; i < count; i += 1) {
             const sprite = sprites[i]
             this.scratchMatrix.compose(
@@ -381,10 +386,14 @@ export class Renderer {
             )
             this.worldSpriteBatch.mesh.setMatrixAt(i, this.scratchMatrix)
 
-            const tint = Color.unpack(sprite.tintCode)
             this.worldSpriteBatch.frameAttr.setX(i, sprite.frameId)
             this.worldSpriteBatch.flipAttr.setX(i, sprite.flipBits)
-            this.worldSpriteBatch.tintAttr.setXYZW(i, tint[0], tint[1], tint[2], tint[3])
+            const base = i * 4
+            const tintCode = sprite.tintCode
+            tintArray[base] = tintCode & 255
+            tintArray[base + 1] = (tintCode >>> 8) & 255
+            tintArray[base + 2] = (tintCode >>> 16) & 255
+            tintArray[base + 3] = (tintCode >>> 24) & 255
             this.worldSpriteBatch.alphaAttr.setX(i, sprite.alpha)
         }
 
@@ -400,6 +409,7 @@ export class Renderer {
         if (!this.uiSpriteBatch) return
 
         const count = Math.min(uiSprites.length, this.uiSpriteBatch.maxInstances)
+        const tintArray = this.uiSpriteBatch.tintAttr.array as Float32Array
         for (let i = 0; i < count; i += 1) {
             const sprite = uiSprites[i]
             this.scratchMatrix.compose(
@@ -413,10 +423,14 @@ export class Renderer {
             )
             this.uiSpriteBatch.mesh.setMatrixAt(i, this.scratchMatrix)
 
-            const tint = Color.unpack(sprite.tintCode)
             this.uiSpriteBatch.frameAttr.setX(i, sprite.frameId)
             this.uiSpriteBatch.flipAttr.setX(i, sprite.flipBits)
-            this.uiSpriteBatch.tintAttr.setXYZW(i, tint[0], tint[1], tint[2], tint[3])
+            const base = i * 4
+            const tintCode = sprite.tintCode
+            tintArray[base] = tintCode & 255
+            tintArray[base + 1] = (tintCode >>> 8) & 255
+            tintArray[base + 2] = (tintCode >>> 16) & 255
+            tintArray[base + 3] = (tintCode >>> 24) & 255
             this.uiSpriteBatch.alphaAttr.setX(i, 1)
         }
 

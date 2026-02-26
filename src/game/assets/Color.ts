@@ -16,13 +16,4 @@ export namespace Color {
             0
         )
     }
-
-    export function unpack(colorCode: number): [number, number, number, number] {
-        return [
-            colorCode & 255,
-            (colorCode >>> 8) & 255,
-            (colorCode >>> 16) & 255,
-            (colorCode >>> 24) & 255,
-        ]
-    }
 }
