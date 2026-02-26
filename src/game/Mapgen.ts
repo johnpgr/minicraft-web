@@ -145,6 +145,63 @@ export namespace Mapgen {
         return { type, damage: 0 }
     }
 
+    function isWaterTile(map: number[], w: number, h: number, x: number, y: number): boolean {
+        if (x < 0 || y < 0 || x >= w || y >= h) return true
+        return map[x + y * w] === SourceTile.WATER
+    }
+
+    function smoothCoastlines(map: number[], w: number, h: number, passes: number): void {
+        for (let pass = 0; pass < passes; pass += 1) {
+            const next = map.slice()
+            for (let y = 0; y < h; y += 1) {
+                for (let x = 0; x < w; x += 1) {
+                    const i = x + y * w
+                    const tile = map[i]
+                    if (tile !== SourceTile.WATER && tile !== SourceTile.GRASS) continue
+
+                    const n = isWaterTile(map, w, h, x, y - 1)
+                    const s = isWaterTile(map, w, h, x, y + 1)
+                    const west = isWaterTile(map, w, h, x - 1, y)
+                    const e = isWaterTile(map, w, h, x + 1, y)
+                    const nw = isWaterTile(map, w, h, x - 1, y - 1)
+                    const ne = isWaterTile(map, w, h, x + 1, y - 1)
+                    const sw = isWaterTile(map, w, h, x - 1, y + 1)
+                    const se = isWaterTile(map, w, h, x + 1, y + 1)
+
+                    const waterNeighbors =
+                        (n ? 1 : 0) +
+                        (s ? 1 : 0) +
+                        (west ? 1 : 0) +
+                        (e ? 1 : 0) +
+                        (nw ? 1 : 0) +
+                        (ne ? 1 : 0) +
+                        (sw ? 1 : 0) +
+                        (se ? 1 : 0)
+
+                    if (tile === SourceTile.WATER && waterNeighbors <= 2) {
+                        next[i] = SourceTile.GRASS
+                        continue
+                    }
+
+                    if (tile === SourceTile.GRASS) {
+                        const cornerWrap =
+                            (n && west && nw) ||
+                            (n && e && ne) ||
+                            (s && west && sw) ||
+                            (s && e && se)
+                        if (waterNeighbors >= 6 || cornerWrap) {
+                            next[i] = SourceTile.WATER
+                        }
+                    }
+                }
+            }
+
+            for (let i = 0; i < map.length; i += 1) {
+                map[i] = next[i]
+            }
+        }
+    }
+
     function createTopMap(
         w: number,
         h: number,
@@ -187,6 +244,8 @@ export namespace Mapgen {
                 }
             }
         }
+
+        smoothCoastlines(map, w, h, 2)
 
         for (let i = 0; i < (w * h) / 2800; i += 1) {
             const xs = random.nextInt(w)
