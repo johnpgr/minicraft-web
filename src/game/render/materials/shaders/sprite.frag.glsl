@@ -9,10 +9,7 @@ varying vec4 vTint;
 varying float vAlpha;
 
 float pickTint(float idx) {
-  if (idx < 0.5) return vTint.x;
-  if (idx < 1.5) return vTint.y;
-  if (idx < 2.5) return vTint.z;
-  return vTint.w;
+  return vTint[int(idx)];
 }
 
 void main() {
@@ -20,10 +17,11 @@ void main() {
   const float TILE_PIXELS = 8.0;
 
   vec2 localUv = vec2(vUvLocal.x, 1.0 - vUvLocal.y);
-  if (mod(vFlipBits, 2.0) >= 1.0) {
+  int flipBits = int(floor(vFlipBits + 0.5));
+  if ((flipBits & 1) != 0) {
     localUv.x = 1.0 - localUv.x;
   }
-  if (floor(vFlipBits / 2.0) >= 1.0) {
+  if ((flipBits & 2) != 0) {
     localUv.y = 1.0 - localUv.y;
   }
 

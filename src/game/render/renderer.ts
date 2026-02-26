@@ -8,9 +8,10 @@ import { UiMaterial } from "./materials/UiMaterial"
 import type { GameState } from "../types"
 import type {
     LightInstance,
+    MapChunkData,
+    MapChunkKey,
     RenderFrame,
     SpriteInstance,
-    TileInstance,
     UiSpriteInstance,
 } from "./types"
 
@@ -65,6 +66,9 @@ export class Renderer {
     private lightBatch: THREE.InstancedMesh | null = null
 
     private scratchMatrix = new THREE.Matrix4()
+    private scratchPos = new THREE.Vector3()
+    private scratchQuat = new THREE.Quaternion()
+    private scratchScale = new THREE.Vector3(1, 1, 1)
     private viewportHeight = 0
     private initialized = false
 
@@ -156,7 +160,7 @@ export class Renderer {
             return
         }
 
-        this.syncChunks(frame.mapTiles, frame.dirtyTiles)
+        this.syncChunks(frame.mapChunksByKey, frame.dirtyChunkKeys)
         this.updateWorldSprites(frame.sprites)
         this.updateUiSprites(frame.uiSprites)
         this.updateLights(frame.lights)
@@ -178,21 +182,21 @@ export class Renderer {
     dispose(): void {
         for (const chunk of this.chunkMeshes.values()) {
             chunk.mesh.geometry.dispose()
-            ;(chunk.mesh.material as THREE.Material).dispose()
             this.worldScene?.remove(chunk.mesh)
         }
         this.chunkMeshes.clear()
 
         this.worldSpriteBatch?.mesh.geometry.dispose()
-        ;(this.worldSpriteBatch?.mesh.material as THREE.Material | undefined)?.dispose()
         this.uiSpriteBatch?.mesh.geometry.dispose()
-        ;(this.uiSpriteBatch?.mesh.material as THREE.Material | undefined)?.dispose()
 
         if (this.lightBatch) {
             this.lightBatch.geometry.dispose()
             ;(this.lightBatch.material as THREE.Material).dispose()
         }
 
+        this.tileMaterial?.dispose()
+        this.spriteMaterial?.dispose()
+        this.uiMaterial?.dispose()
         this.renderer?.dispose()
 
         this.renderer = null
@@ -201,6 +205,9 @@ export class Renderer {
         this.lightScene = null
         this.worldCamera = null
         this.uiCamera = null
+        this.tileMaterial = null
+        this.spriteMaterial = null
+        this.uiMaterial = null
         this.initialized = false
     }
 
@@ -218,6 +225,10 @@ export class Renderer {
         const flipAttr = new THREE.InstancedBufferAttribute(new Float32Array(maxInstances), 1)
         const tintAttr = new THREE.InstancedBufferAttribute(new Float32Array(maxInstances * 4), 4)
         const alphaAttr = new THREE.InstancedBufferAttribute(new Float32Array(maxInstances), 1)
+        frameAttr.setUsage(THREE.DynamicDrawUsage)
+        flipAttr.setUsage(THREE.DynamicDrawUsage)
+        tintAttr.setUsage(THREE.DynamicDrawUsage)
+        alphaAttr.setUsage(THREE.DynamicDrawUsage)
 
         mesh.geometry.setAttribute("aFrame", frameAttr)
         mesh.geometry.setAttribute("aFlipBits", flipAttr)
@@ -231,75 +242,55 @@ export class Renderer {
     }
 
     private syncChunks(
-        mapTiles: TileInstance[],
-        dirtyTiles: Array<{ x: number; y: number }>,
+        mapChunksByKey: Map<MapChunkKey, MapChunkData>,
+        dirtyChunkKeys: Set<MapChunkKey>,
     ): void {
         if (!this.worldScene || !this.tileMaterial) return
 
-        if (mapTiles.length === 0) {
+        if (mapChunksByKey.size === 0) {
             for (const chunk of this.chunkMeshes.values()) {
                 this.worldScene.remove(chunk.mesh)
                 chunk.mesh.geometry.dispose()
-                ;(chunk.mesh.material as THREE.Material).dispose()
             }
             this.chunkMeshes.clear()
             return
         }
 
         if (this.chunkMeshes.size === 0) {
-            const allChunks = Chunks.groupTiles(mapTiles)
-            for (const chunk of allChunks.values()) {
-                this.rebuildChunk(chunk)
+            for (const chunk of mapChunksByKey.values()) {
+                this.updateChunkMesh(chunk)
             }
             return
         }
 
-        const dirty = Chunks.dirtyRegion(dirtyTiles)
-        if (!dirty) return
+        if (dirtyChunkKeys.size === 0) return
 
-        for (let chunkY = dirty.minChunkY; chunkY <= dirty.maxChunkY; chunkY += 1) {
-            for (let chunkX = dirty.minChunkX; chunkX <= dirty.maxChunkX; chunkX += 1) {
-                const tiles = mapTiles.filter((tile) => {
-                    const { chunkX: cx, chunkY: cy } = Chunks.coords(
-                        tile.worldX,
-                        tile.worldY,
-                    )
-                    return cx === chunkX && cy === chunkY
-                })
-
-                const key = Chunks.key(chunkX, chunkY)
-                if (tiles.length === 0) {
-                    const existing = this.chunkMeshes.get(key)
-                    if (existing) {
-                        this.worldScene.remove(existing.mesh)
-                        this.chunkMeshes.delete(key)
-                    }
-                    continue
-                }
-
-                this.rebuildChunk({ key, chunkX, chunkY, tiles })
+        for (const chunkKey of dirtyChunkKeys) {
+            const chunk = mapChunksByKey.get(chunkKey)
+            if (!chunk) {
+                this.removeChunkMesh(chunkKey)
+                continue
             }
+
+            this.updateChunkMesh(chunk)
         }
     }
 
-    private rebuildChunk(chunk: Chunks.ChunkData): void {
-        if (!this.worldScene || !this.tileMaterial) return
+    private removeChunkMesh(chunkKey: MapChunkKey): void {
+        const existing = this.chunkMeshes.get(chunkKey)
+        if (!existing) return
+        this.worldScene?.remove(existing.mesh)
+        existing.mesh.geometry.dispose()
+        this.chunkMeshes.delete(chunkKey)
+    }
 
-        const existing = this.chunkMeshes.get(chunk.key)
-        if (existing) {
-            this.worldScene.remove(existing.mesh)
-            existing.mesh.geometry.dispose()
-            ;(existing.mesh.material as THREE.Material).dispose()
-        }
+    private createChunkMesh(chunkKey: MapChunkKey): ChunkMesh | null {
+        if (!this.worldScene || !this.tileMaterial) return null
 
         const geometry = new THREE.PlaneGeometry(1, 1)
-        const mesh = new THREE.InstancedMesh(
-            geometry,
-            this.tileMaterial.clone(),
-            TILE_BATCH_CAPACITY,
-        )
+        const mesh = new THREE.InstancedMesh(geometry, this.tileMaterial, TILE_BATCH_CAPACITY)
         mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
-        mesh.frustumCulled = false
+        mesh.frustumCulled = true
         mesh.renderOrder = 10
 
         const frameAttr = new THREE.InstancedBufferAttribute(
@@ -318,19 +309,38 @@ export class Renderer {
             new Float32Array(TILE_BATCH_CAPACITY),
             1,
         )
+        frameAttr.setUsage(THREE.DynamicDrawUsage)
+        flipAttr.setUsage(THREE.DynamicDrawUsage)
+        tintAttr.setUsage(THREE.DynamicDrawUsage)
+        alphaAttr.setUsage(THREE.DynamicDrawUsage)
 
         mesh.geometry.setAttribute("aFrame", frameAttr)
         mesh.geometry.setAttribute("aFlipBits", flipAttr)
         mesh.geometry.setAttribute("aTint", tintAttr)
         mesh.geometry.setAttribute("aAlpha", alphaAttr)
 
+        mesh.count = 0
+        this.worldScene.add(mesh)
+        const chunkMesh = { mesh, frameAttr, flipAttr, tintAttr, alphaAttr }
+        this.chunkMeshes.set(chunkKey, chunkMesh)
+        return chunkMesh
+    }
+
+    private updateChunkMesh(chunk: MapChunkData): void {
+        let chunkMesh = this.chunkMeshes.get(chunk.key)
+        if (!chunkMesh) {
+            chunkMesh = this.createChunkMesh(chunk.key)
+            if (!chunkMesh) return
+        }
+
+        const { mesh, frameAttr, flipAttr, tintAttr, alphaAttr } = chunkMesh
         let count = 0
         for (const tile of chunk.tiles) {
             if (count >= TILE_BATCH_CAPACITY) break
             this.scratchMatrix.compose(
-                new THREE.Vector3(tile.worldX, -tile.worldY, 0),
-                new THREE.Quaternion(),
-                new THREE.Vector3(tile.scale, tile.scale, 1),
+                this.scratchPos.set(tile.worldX, -tile.worldY, 0),
+                this.scratchQuat,
+                this.scratchScale.set(tile.scale, tile.scale, 1),
             )
             mesh.setMatrixAt(count, this.scratchMatrix)
 
@@ -348,53 +358,74 @@ export class Renderer {
         flipAttr.needsUpdate = true
         tintAttr.needsUpdate = true
         alphaAttr.needsUpdate = true
-
-        this.worldScene.add(mesh)
-        this.chunkMeshes.set(chunk.key, { mesh, frameAttr, flipAttr, tintAttr, alphaAttr })
+        if (!mesh.boundingBox || !mesh.boundingSphere) {
+            mesh.computeBoundingBox()
+            mesh.computeBoundingSphere()
+        }
     }
 
     private updateWorldSprites(sprites: SpriteInstance[]): void {
         if (!this.worldSpriteBatch) return
-        this.writeBatch(this.worldSpriteBatch, sprites.length, (index) => {
-            const sprite = sprites[index]
+
+        const count = Math.min(sprites.length, this.worldSpriteBatch.maxInstances)
+        for (let i = 0; i < count; i += 1) {
+            const sprite = sprites[i]
             this.scratchMatrix.compose(
-                new THREE.Vector3(snapWorld(sprite.worldX), -snapWorld(sprite.worldY), sprite.zLayer),
-                new THREE.Quaternion(),
-                new THREE.Vector3(0.5, 0.5, 1),
+                this.scratchPos.set(
+                    snapWorld(sprite.worldX),
+                    -snapWorld(sprite.worldY),
+                    sprite.zLayer,
+                ),
+                this.scratchQuat,
+                this.scratchScale.set(0.5, 0.5, 1),
             )
+            this.worldSpriteBatch.mesh.setMatrixAt(i, this.scratchMatrix)
+
             const tint = Color.unpack(sprite.tintCode)
-            return {
-                matrix: this.scratchMatrix,
-                frame: sprite.frameId,
-                flip: sprite.flipBits,
-                tint,
-                alpha: sprite.alpha,
-            }
-        })
+            this.worldSpriteBatch.frameAttr.setX(i, sprite.frameId)
+            this.worldSpriteBatch.flipAttr.setX(i, sprite.flipBits)
+            this.worldSpriteBatch.tintAttr.setXYZW(i, tint[0], tint[1], tint[2], tint[3])
+            this.worldSpriteBatch.alphaAttr.setX(i, sprite.alpha)
+        }
+
+        this.worldSpriteBatch.mesh.count = count
+        this.worldSpriteBatch.mesh.instanceMatrix.needsUpdate = true
+        this.worldSpriteBatch.frameAttr.needsUpdate = true
+        this.worldSpriteBatch.flipAttr.needsUpdate = true
+        this.worldSpriteBatch.tintAttr.needsUpdate = true
+        this.worldSpriteBatch.alphaAttr.needsUpdate = true
     }
 
     private updateUiSprites(uiSprites: UiSpriteInstance[]): void {
         if (!this.uiSpriteBatch) return
-        this.writeBatch(this.uiSpriteBatch, uiSprites.length, (index) => {
-            const sprite = uiSprites[index]
+
+        const count = Math.min(uiSprites.length, this.uiSpriteBatch.maxInstances)
+        for (let i = 0; i < count; i += 1) {
+            const sprite = uiSprites[i]
             this.scratchMatrix.compose(
-                new THREE.Vector3(
+                this.scratchPos.set(
                     sprite.screenX + 4,
                     this.viewportHeight - (sprite.screenY + 4),
                     0,
                 ),
-                new THREE.Quaternion(),
-                new THREE.Vector3(8, 8, 1),
+                this.scratchQuat,
+                this.scratchScale.set(8, 8, 1),
             )
+            this.uiSpriteBatch.mesh.setMatrixAt(i, this.scratchMatrix)
+
             const tint = Color.unpack(sprite.tintCode)
-            return {
-                matrix: this.scratchMatrix,
-                frame: sprite.frameId,
-                flip: sprite.flipBits,
-                tint,
-                alpha: 1,
-            }
-        })
+            this.uiSpriteBatch.frameAttr.setX(i, sprite.frameId)
+            this.uiSpriteBatch.flipAttr.setX(i, sprite.flipBits)
+            this.uiSpriteBatch.tintAttr.setXYZW(i, tint[0], tint[1], tint[2], tint[3])
+            this.uiSpriteBatch.alphaAttr.setX(i, 1)
+        }
+
+        this.uiSpriteBatch.mesh.count = count
+        this.uiSpriteBatch.mesh.instanceMatrix.needsUpdate = true
+        this.uiSpriteBatch.frameAttr.needsUpdate = true
+        this.uiSpriteBatch.flipAttr.needsUpdate = true
+        this.uiSpriteBatch.tintAttr.needsUpdate = true
+        this.uiSpriteBatch.alphaAttr.needsUpdate = true
     }
 
     private updateLights(lights: LightInstance[]): void {
@@ -403,43 +434,13 @@ export class Renderer {
         for (let i = 0; i < count; i += 1) {
             const light = lights[i]
             this.scratchMatrix.compose(
-                new THREE.Vector3(light.worldX, -light.worldY, 2),
-                new THREE.Quaternion(),
-                new THREE.Vector3(light.radiusTiles * 2, light.radiusTiles * 2, 1),
+                this.scratchPos.set(light.worldX, -light.worldY, 2),
+                this.scratchQuat,
+                this.scratchScale.set(light.radiusTiles * 2, light.radiusTiles * 2, 1),
             )
             this.lightBatch.setMatrixAt(i, this.scratchMatrix)
         }
         this.lightBatch.count = count
         this.lightBatch.instanceMatrix.needsUpdate = true
-    }
-
-    private writeBatch(
-        batch: DynamicBatch,
-        requestedCount: number,
-        fill: (index: number) => {
-            matrix: THREE.Matrix4
-            frame: number
-            flip: number
-            tint: [number, number, number, number]
-            alpha: number
-        },
-    ): void {
-        const count = Math.min(requestedCount, batch.maxInstances)
-
-        for (let i = 0; i < count; i += 1) {
-            const data = fill(i)
-            batch.mesh.setMatrixAt(i, data.matrix)
-            batch.frameAttr.setX(i, data.frame)
-            batch.flipAttr.setX(i, data.flip)
-            batch.tintAttr.setXYZW(i, data.tint[0], data.tint[1], data.tint[2], data.tint[3])
-            batch.alphaAttr.setX(i, data.alpha)
-        }
-
-        batch.mesh.count = count
-        batch.mesh.instanceMatrix.needsUpdate = true
-        batch.frameAttr.needsUpdate = true
-        batch.flipAttr.needsUpdate = true
-        batch.tintAttr.needsUpdate = true
-        batch.alphaAttr.needsUpdate = true
     }
 }

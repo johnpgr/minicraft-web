@@ -49,6 +49,15 @@ export function dirtyRegion(dirtyTiles: Array<{ x: number; y: number }>): DirtyR
     return { minChunkX, minChunkY, maxChunkX, maxChunkY }
 }
 
+export function dirtyChunkKeys(dirtyTiles: Array<{ x: number; y: number }>): Set<ChunkKey> {
+    const keys = new Set<ChunkKey>()
+    for (const tile of dirtyTiles) {
+        const { chunkX, chunkY } = coords(tile.x, tile.y)
+        keys.add(key(chunkX, chunkY))
+    }
+    return keys
+}
+
 export function groupTiles(tiles: TileInstance[]): Map<ChunkKey, ChunkData> {
     const chunks = new Map<ChunkKey, ChunkData>()
 

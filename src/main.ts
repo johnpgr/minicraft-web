@@ -72,6 +72,7 @@ async function bootstrap(): Promise<void> {
     let frames = 0
     let ticks = 0
     let lastStats = performance.now()
+    let wasFocused = document.visibilityState === "visible" && document.hasFocus()
 
     const frame = () => {
         const now = performance.now()
@@ -79,6 +80,7 @@ async function bootstrap(): Promise<void> {
         last = now
         accumulator += Math.min(delta, 100)
         const isFocused = document.visibilityState === "visible" && document.hasFocus()
+        const justRegainedFocus = isFocused && !wasFocused
 
         while (accumulator >= TICK_MS) {
             input.tick()
@@ -94,24 +96,20 @@ async function bootstrap(): Promise<void> {
         if (isFocused) frames += 1
         dirtyTiles = []
 
-        if (!isFocused) {
+        if (!isFocused || justRegainedFocus) {
             lastStats = now
             frames = 0
             ticks = 0
         } else if (now - lastStats >= 1000) {
             console.log(`${ticks} ticks, ${frames} fps`)
-            lastStats += 1000
+            lastStats = now
             frames = 0
             ticks = 0
         }
 
+        wasFocused = isFocused
         requestAnimationFrame(frame)
     }
-
-    window.addEventListener("resize", () => {
-        const viewport = Viewport.getRenderViewportSize()
-        renderer.resize(viewport.width, viewport.height)
-    })
 
     requestAnimationFrame(frame)
 }

@@ -1,8 +1,11 @@
 import { Color } from "../assets/Color"
 import { type GameState, TileType } from "../types"
-import type { TileInstance } from "./types"
+import { Chunks } from "./Chunks"
+import type { MapChunkBuildResult, MapChunkData, MapChunkKey, TileInstance } from "./types"
 
 export namespace TileBuilder {
+    const WATER_ANIM_TICK_DIVISOR = 10
+
     function getTileType(state: GameState, x: number, y: number): TileType | null {
         if (y < 0 || y >= state.map.length || x < 0 || x >= state.map[y].length) {
             return null
@@ -272,26 +275,176 @@ export namespace TileBuilder {
             pushTileQuad(output, x, y, [0, 1, 2, 3], [dirt, dirt, dirt, dirt])
             return
         }
-        const cactus = Color.get(-1, 10, 40, 50)
-        pushTileQuad(
-            output,
-            x,
-            y,
-            [8 + 2 * 32, 9 + 2 * 32, 8 + 3 * 32, 9 + 3 * 32],
-            [cactus, cactus, cactus, cactus],
-        )
+        if (tileType === TileType.CACTUS) {
+            // Render sand underneath and overlay cactus with transparent background.
+            pushSandTile(state, x, y, output)
+            const cactus = Color.get(20, 40, 50, -1)
+            pushTileQuad(
+                output,
+                x,
+                y,
+                [8 + 2 * 32, 9 + 2 * 32, 8 + 3 * 32, 9 + 3 * 32],
+                [cactus, cactus, cactus, cactus],
+            )
+            return
+        }
     }
 
-    export function buildMapTiles(state: GameState): TileInstance[] {
-        const mapTiles: TileInstance[] = []
-        if (state.mode === "title") return mapTiles
+    let cachedMapRef: GameState["map"] | null = null
+    let lastAnimatedTick = -1
+    const cachedMapChunksByKey = new Map<MapChunkKey, MapChunkData>()
+    const waterChunkKeys = new Set<MapChunkKey>()
 
-        for (let y = 0; y < state.map.length; y += 1) {
-            for (let x = 0; x < state.map[y].length; x += 1) {
-                buildTileInstances(state, x, y, state.tickCount, mapTiles)
+    function parseChunkKey(chunkKey: MapChunkKey): { chunkX: number; chunkY: number } {
+        const [rawX, rawY] = chunkKey.split(":")
+        return { chunkX: Number(rawX), chunkY: Number(rawY) }
+    }
+
+    function clearCache(): void {
+        cachedMapChunksByKey.clear()
+        waterChunkKeys.clear()
+    }
+
+    function mapSize(state: GameState): { width: number; height: number } {
+        return { width: state.map[0]?.length ?? 0, height: state.map.length }
+    }
+
+    function chunkBounds(
+        state: GameState,
+    ): { minChunkX: number; minChunkY: number; maxChunkX: number; maxChunkY: number } | null {
+        const { width, height } = mapSize(state)
+        if (width === 0 || height === 0) return null
+
+        const min = Chunks.coords(0, 0)
+        const max = Chunks.coords(width - 1, height - 1)
+        return {
+            minChunkX: min.chunkX,
+            minChunkY: min.chunkY,
+            maxChunkX: max.chunkX,
+            maxChunkY: max.chunkY,
+        }
+    }
+
+    function allChunkKeys(state: GameState): Set<MapChunkKey> {
+        const keys = new Set<MapChunkKey>()
+        const bounds = chunkBounds(state)
+        if (!bounds) return keys
+
+        for (let chunkY = bounds.minChunkY; chunkY <= bounds.maxChunkY; chunkY += 1) {
+            for (let chunkX = bounds.minChunkX; chunkX <= bounds.maxChunkX; chunkX += 1) {
+                keys.add(Chunks.key(chunkX, chunkY))
+            }
+        }
+        return keys
+    }
+
+    function addNeighborChunkKeys(
+        dirtyChunkKeys: Set<MapChunkKey>,
+        tileX: number,
+        tileY: number,
+    ): void {
+        for (let ny = tileY - 1; ny <= tileY + 1; ny += 1) {
+            for (let nx = tileX - 1; nx <= tileX + 1; nx += 1) {
+                const { chunkX, chunkY } = Chunks.coords(nx, ny)
+                dirtyChunkKeys.add(Chunks.key(chunkX, chunkY))
+            }
+        }
+    }
+
+    function rebuildChunk(
+        state: GameState,
+        chunkKey: MapChunkKey,
+        tick: number,
+    ): void {
+        const { width, height } = mapSize(state)
+        const { chunkX, chunkY } = parseChunkKey(chunkKey)
+
+        const rawStartX = chunkX * Chunks.CHUNK_SIZE
+        const rawStartY = chunkY * Chunks.CHUNK_SIZE
+        const rawEndX = rawStartX + Chunks.CHUNK_SIZE - 1
+        const rawEndY = rawStartY + Chunks.CHUNK_SIZE - 1
+
+        const startX = Math.max(0, rawStartX)
+        const startY = Math.max(0, rawStartY)
+        const endX = Math.min(width - 1, rawEndX)
+        const endY = Math.min(height - 1, rawEndY)
+
+        if (startX > endX || startY > endY) {
+            cachedMapChunksByKey.delete(chunkKey)
+            waterChunkKeys.delete(chunkKey)
+            return
+        }
+
+        const tiles: TileInstance[] = []
+        let hasWater = false
+
+        for (let y = startY; y <= endY; y += 1) {
+            for (let x = startX; x <= endX; x += 1) {
+                buildTileInstances(state, x, y, tick, tiles)
+                if (state.map[y][x].type === TileType.WATER) {
+                    hasWater = true
+                }
             }
         }
 
-        return mapTiles
+        cachedMapChunksByKey.set(chunkKey, {
+            key: chunkKey,
+            chunkX,
+            chunkY,
+            tiles,
+        })
+        if (hasWater) {
+            waterChunkKeys.add(chunkKey)
+        } else {
+            waterChunkKeys.delete(chunkKey)
+        }
+    }
+
+    export function buildMapChunks(
+        state: GameState,
+        dirtyTiles: Array<{ x: number; y: number }>,
+    ): MapChunkBuildResult {
+        if (state.mode === "title") {
+            clearCache()
+            return {
+                mapChunksByKey: cachedMapChunksByKey,
+                dirtyChunkKeys: new Set<MapChunkKey>(),
+            }
+        }
+
+        const mapChanged = cachedMapRef !== state.map
+        if (mapChanged) {
+            cachedMapRef = state.map
+            lastAnimatedTick = -1
+            clearCache()
+        }
+        const waterAnimTick = Math.floor(state.tickCount / WATER_ANIM_TICK_DIVISOR)
+
+        const dirtyChunkKeys = new Set<MapChunkKey>()
+        if (cachedMapChunksByKey.size === 0 || mapChanged) {
+            for (const chunkKey of allChunkKeys(state)) {
+                dirtyChunkKeys.add(chunkKey)
+            }
+        }
+
+        for (const dirty of dirtyTiles) {
+            addNeighborChunkKeys(dirtyChunkKeys, dirty.x, dirty.y)
+        }
+
+        if (waterAnimTick !== lastAnimatedTick) {
+            for (const chunkKey of waterChunkKeys) {
+                dirtyChunkKeys.add(chunkKey)
+            }
+            lastAnimatedTick = waterAnimTick
+        }
+
+        for (const chunkKey of dirtyChunkKeys) {
+            rebuildChunk(state, chunkKey, waterAnimTick)
+        }
+
+        return {
+            mapChunksByKey: cachedMapChunksByKey,
+            dirtyChunkKeys,
+        }
     }
 }

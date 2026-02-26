@@ -8,6 +8,20 @@ export interface TileInstance {
     tintCode: number
 }
 
+export type MapChunkKey = `${number}:${number}`
+
+export interface MapChunkData {
+    key: MapChunkKey
+    chunkX: number
+    chunkY: number
+    tiles: TileInstance[]
+}
+
+export interface MapChunkBuildResult {
+    mapChunksByKey: Map<MapChunkKey, MapChunkData>
+    dirtyChunkKeys: Set<MapChunkKey>
+}
+
 export interface SpriteInstance {
     worldX: number
     worldY: number
@@ -35,9 +49,9 @@ export interface LightInstance {
 export interface RenderFrame {
     cameraX: number
     cameraY: number
-    mapTiles: TileInstance[]
+    mapChunksByKey: Map<MapChunkKey, MapChunkData>
+    dirtyChunkKeys: Set<MapChunkKey>
     sprites: SpriteInstance[]
     uiSprites: UiSpriteInstance[]
     lights: LightInstance[]
-    dirtyTiles: Array<{ x: number; y: number }>
 }
