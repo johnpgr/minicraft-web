@@ -106,7 +106,6 @@ export interface GameState {
 }
 
 export const MAP_SIZE = 128;
-export const TILE_SIZE = 1;
 
 export const FONT_CHARS =
   'ABCDEFGHIJKLMNOPQRSTUVWXYZ      ' + '0123456789.,!?\'"-+=/\\%()<>:;     ';

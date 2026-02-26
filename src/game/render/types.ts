@@ -30,14 +30,11 @@ export interface LightInstance {
   worldX: number;
   worldY: number;
   radiusTiles: number;
-  intensity: number;
 }
 
 export interface RenderFrame {
   cameraX: number;
   cameraY: number;
-  worldWidth: number;
-  worldHeight: number;
   mapTiles: TileInstance[];
   sprites: SpriteInstance[];
   uiSprites: UiSpriteInstance[];
