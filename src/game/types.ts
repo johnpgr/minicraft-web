@@ -92,7 +92,7 @@ export interface InventoryItem {
     quantity: number
 }
 
-export type GameMode = "title" | "playing" | "paused" | "dead"
+export type GameMode = "title" | "instructions" | "about" | "playing" | "dead"
 
 export interface GameState {
     map: GameTile[][]
@@ -101,6 +101,7 @@ export interface GameState {
     drops: ItemDrop[]
     floatingTexts: FloatingText[]
     inventory: InventoryItem[]
+    titleSelection: number
     mode: GameMode
     tickCount: number
     gameTime: number

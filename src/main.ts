@@ -53,20 +53,6 @@ async function bootstrap(): Promise<void> {
     const state = State.create()
     let dirtyTiles: Array<{ x: number; y: number }> = []
 
-    const pauseOnUnfocus = (): void => {
-        input.releaseAll()
-        if (state.mode === "playing") {
-            state.mode = "paused"
-        }
-    }
-
-    window.addEventListener("blur", pauseOnUnfocus)
-    document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState !== "visible") {
-            pauseOnUnfocus()
-        }
-    })
-
     let accumulator = 0
     let last = performance.now()
     let frames = 0
@@ -83,15 +69,25 @@ async function bootstrap(): Promise<void> {
         const justRegainedFocus = isFocused && !wasFocused
 
         while (accumulator >= TICK_MS) {
-            input.tick()
-            const result = State.tick(state, Input.getInputState(input))
-            dirtyTiles = result.dirtyTiles
+            if (isFocused) {
+                input.tick()
+                const result = State.tick(state, Input.getInputState(input))
+                dirtyTiles = result.dirtyTiles
+                ticks += 1
+            } else {
+                input.releaseAll()
+            }
             accumulator -= TICK_MS
-            if (isFocused) ticks += 1
         }
 
         const viewport = Viewport.getRenderViewportSize()
-        const renderFrame = FrameBuilder.buildRenderFrame(state, dirtyTiles, viewport.width, viewport.height)
+        const renderFrame = FrameBuilder.buildRenderFrame(
+            state,
+            dirtyTiles,
+            viewport.width,
+            viewport.height,
+            isFocused,
+        )
         renderer.render(state, renderFrame)
         if (isFocused) frames += 1
         dirtyTiles = []

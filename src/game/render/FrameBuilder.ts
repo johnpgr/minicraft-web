@@ -10,6 +10,7 @@ export namespace FrameBuilder {
         dirtyTiles: Array<{ x: number; y: number }>,
         width: number,
         height: number,
+        hasFocus: boolean,
     ): RenderFrame {
         const mapBuild = TileBuilder.buildMapChunks(state, dirtyTiles)
         return {
@@ -19,7 +20,7 @@ export namespace FrameBuilder {
             dirtyChunkKeys: mapBuild.dirtyChunkKeys,
             animatedChunkKeys: mapBuild.animatedChunkKeys,
             sprites: WorldSpriteBuilder.buildWorldSprites(state),
-            uiSprites: UiBuilder.buildUiSprites(state, width, height),
+            uiSprites: UiBuilder.buildUiSprites(state, width, height, hasFocus),
             lights: [],
         }
     }

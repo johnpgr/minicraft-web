@@ -24,35 +24,54 @@ export namespace WorldSpriteBuilder {
         }
     }
 
+    function pushAttackSplash(
+        sprites: SpriteInstance[],
+        xPx: number,
+        yPx: number,
+        frameId: number,
+        flipBits: number,
+    ): void {
+        sprites.push({
+            worldX: (xPx + 4) / 16,
+            worldY: (yPx + 4) / 16,
+            zLayer: 1.4,
+            frameId,
+            flipBits,
+            tintCode: Color.get(-1, 555, 555, 555),
+            alpha: 1,
+        })
+    }
+
     export function buildWorldSprites(state: GameState): SpriteInstance[] {
         const sprites: SpriteInstance[] = []
 
-        if (state.mode !== "playing" && state.mode !== "paused" && state.mode !== "dead") {
+        if (state.mode !== "playing" && state.mode !== "dead") {
             return sprites
         }
 
         const playerTint = state.player.hurtTime > 0 ? PLAYER_HURT_TINT : PLAYER_TINT
         const playerPixels = pushPlayerSprites(state.player, playerTint, sprites)
-        const px = playerPixels.px / 16
-        const py = playerPixels.py / 16
 
         if (state.player.attackTime > 0) {
-            let ax = px
-            let ay = py
-            if (state.player.attackDir === "up") ay -= 0.9
-            if (state.player.attackDir === "down") ay += 0.9
-            if (state.player.attackDir === "left") ax -= 0.9
-            if (state.player.attackDir === "right") ax += 0.9
+            const xo = playerPixels.px - 8
+            const yo = playerPixels.py - 11
 
-            sprites.push({
-                worldX: ax,
-                worldY: ay,
-                zLayer: 1.4,
-                frameId: 6 + 13 * 32,
-                flipBits: 0,
-                tintCode: Color.get(-1, 555, 555, 555),
-                alpha: 1,
-            })
+            if (state.player.attackDir === "up") {
+                pushAttackSplash(sprites, xo, yo - 4, 6 + 13 * 32, 0)
+                pushAttackSplash(sprites, xo + 8, yo - 4, 6 + 13 * 32, 1)
+            }
+            if (state.player.attackDir === "left") {
+                pushAttackSplash(sprites, xo - 4, yo, 7 + 13 * 32, 1)
+                pushAttackSplash(sprites, xo - 4, yo + 8, 7 + 13 * 32, 3)
+            }
+            if (state.player.attackDir === "right") {
+                pushAttackSplash(sprites, xo + 12, yo, 7 + 13 * 32, 0)
+                pushAttackSplash(sprites, xo + 12, yo + 8, 7 + 13 * 32, 2)
+            }
+            if (state.player.attackDir === "down") {
+                pushAttackSplash(sprites, xo, yo + 12, 6 + 13 * 32, 2)
+                pushAttackSplash(sprites, xo + 8, yo + 12, 6 + 13 * 32, 3)
+            }
         }
 
         for (const enemy of state.enemies) {

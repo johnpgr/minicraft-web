@@ -50,6 +50,8 @@ export interface InputState {
     down: boolean
     left: boolean
     right: boolean
+    upClicked: boolean
+    downClicked: boolean
     attackClicked: boolean
     menuClicked: boolean
 }
@@ -84,6 +86,7 @@ export function create(): GameState {
         drops: [],
         floatingTexts: [],
         inventory: [],
+        titleSelection: 0,
         mode: "title",
         tickCount: 0,
         gameTime: 0,
@@ -534,8 +537,28 @@ export function tick(state: GameState, input: InputState): TickResult {
     const dirtyTiles: Array<{ x: number; y: number }> = []
 
     if (state.mode === "title") {
+        if (input.upClicked) state.titleSelection -= 1
+        if (input.downClicked) state.titleSelection += 1
+
+        const menuSize = 3
+        if (state.titleSelection < 0) state.titleSelection += menuSize
+        if (state.titleSelection >= menuSize) state.titleSelection -= menuSize
+
         if (input.attackClicked || input.menuClicked) {
-            state.mode = "playing"
+            if (state.titleSelection === 0) {
+                state.mode = "playing"
+            } else if (state.titleSelection === 1) {
+                state.mode = "instructions"
+            } else if (state.titleSelection === 2) {
+                state.mode = "about"
+            }
+        }
+        return { dirtyTiles }
+    }
+
+    if (state.mode === "instructions" || state.mode === "about") {
+        if (input.attackClicked || input.menuClicked) {
+            state.mode = "title"
         }
         return { dirtyTiles }
     }
@@ -549,22 +572,11 @@ export function tick(state: GameState, input: InputState): TickResult {
             state.drops = fresh.drops
             state.floatingTexts = fresh.floatingTexts
             state.inventory = fresh.inventory
+            state.titleSelection = fresh.titleSelection
             state.tickCount = 0
             state.gameTime = 0
             state.mode = "title"
         }
-        return { dirtyTiles }
-    }
-
-    if (state.mode === "paused") {
-        if (input.attackClicked || input.menuClicked) {
-            state.mode = "playing"
-        }
-        return { dirtyTiles }
-    }
-
-    if (input.menuClicked) {
-        state.mode = "paused"
         return { dirtyTiles }
     }
 

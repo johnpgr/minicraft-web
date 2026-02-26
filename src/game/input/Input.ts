@@ -77,6 +77,8 @@ export namespace Input {
             down: input.down.down,
             left: input.left.down,
             right: input.right.down,
+            upClicked: input.up.clicked,
+            downClicked: input.down.clicked,
             attackClicked: input.attack.clicked,
             menuClicked: input.menu.clicked,
         }

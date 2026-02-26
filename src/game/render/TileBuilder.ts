@@ -446,7 +446,11 @@ export namespace TileBuilder {
         state: GameState,
         dirtyTiles: Array<{ x: number; y: number }>,
     ): MapChunkBuildResult {
-        if (state.mode === "title") {
+        if (
+            state.mode === "title" ||
+            state.mode === "instructions" ||
+            state.mode === "about"
+        ) {
             clearCache()
             return {
                 mapChunksByKey: cachedMapChunksByKey,
