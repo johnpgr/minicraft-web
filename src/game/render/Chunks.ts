@@ -1,5 +1,6 @@
 import type { TileInstance } from "./types"
 
+export namespace Chunks {
 export const CHUNK_SIZE = 32
 
 export type ChunkKey = `${number}:${number}`
@@ -18,18 +19,18 @@ export interface ChunkData {
     tiles: TileInstance[]
 }
 
-export function getChunkCoords(x: number, y: number): { chunkX: number; chunkY: number } {
+export function coords(x: number, y: number): { chunkX: number; chunkY: number } {
     return {
         chunkX: Math.floor((x + 0.5) / CHUNK_SIZE),
         chunkY: Math.floor((y + 0.5) / CHUNK_SIZE),
     }
 }
 
-export function createChunkKey(chunkX: number, chunkY: number): ChunkKey {
+export function key(chunkX: number, chunkY: number): ChunkKey {
     return `${chunkX}:${chunkY}`
 }
 
-export function getDirtyRegion(dirtyTiles: Array<{ x: number; y: number }>): DirtyRegion | null {
+export function dirtyRegion(dirtyTiles: Array<{ x: number; y: number }>): DirtyRegion | null {
     if (dirtyTiles.length === 0) return null
 
     let minChunkX = Number.POSITIVE_INFINITY
@@ -38,7 +39,7 @@ export function getDirtyRegion(dirtyTiles: Array<{ x: number; y: number }>): Dir
     let maxChunkY = Number.NEGATIVE_INFINITY
 
     for (const tile of dirtyTiles) {
-        const { chunkX, chunkY } = getChunkCoords(tile.x, tile.y)
+        const { chunkX, chunkY } = coords(tile.x, tile.y)
         minChunkX = Math.min(minChunkX, chunkX)
         minChunkY = Math.min(minChunkY, chunkY)
         maxChunkX = Math.max(maxChunkX, chunkX)
@@ -48,20 +49,21 @@ export function getDirtyRegion(dirtyTiles: Array<{ x: number; y: number }>): Dir
     return { minChunkX, minChunkY, maxChunkX, maxChunkY }
 }
 
-export function groupTilesByChunk(tiles: TileInstance[]): Map<ChunkKey, ChunkData> {
+export function groupTiles(tiles: TileInstance[]): Map<ChunkKey, ChunkData> {
     const chunks = new Map<ChunkKey, ChunkData>()
 
     for (const tile of tiles) {
-        const { chunkX, chunkY } = getChunkCoords(tile.worldX, tile.worldY)
-        const key = createChunkKey(chunkX, chunkY)
-        const existing = chunks.get(key)
+        const { chunkX, chunkY } = coords(tile.worldX, tile.worldY)
+        const chunkKey = key(chunkX, chunkY)
+        const existing = chunks.get(chunkKey)
 
         if (existing) {
             existing.tiles.push(tile)
         } else {
-            chunks.set(key, { key, chunkX, chunkY, tiles: [tile] })
+            chunks.set(chunkKey, { key: chunkKey, chunkX, chunkY, tiles: [tile] })
         }
     }
 
     return chunks
+}
 }

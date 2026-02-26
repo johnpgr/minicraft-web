@@ -1,5 +1,6 @@
 import { GameTile, MAP_SIZE, TileType } from "./types"
 
+export namespace Mapgen {
 function lerp(a: number, b: number, t: number): number {
     return a + (b - a) * t
 }
@@ -53,7 +54,7 @@ function createTile(type: TileType): GameTile {
     return { type, damage: 0 }
 }
 
-export function generateMap(seed?: number): GameTile[][] {
+export function generate(seed?: number): GameTile[][] {
     const resolvedSeed = seed ?? Math.floor(Math.random() * 1_000_000)
     const map: GameTile[][] = []
 
@@ -108,4 +109,5 @@ export function generateMap(seed?: number): GameTile[][] {
     }
 
     return map
+}
 }

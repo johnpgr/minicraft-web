@@ -1,18 +1,10 @@
 import * as THREE from "three"
-import { Color } from "../assets/color"
-import {
-    CHUNK_SIZE,
-    createChunkKey,
-    getChunkCoords,
-    getDirtyRegion,
-    groupTilesByChunk,
-    type ChunkData,
-    type ChunkKey,
-} from "./chunks"
-import { createLightMaterial } from "./materials/lightMaterial"
-import { createSpriteMaterial } from "./materials/spriteMaterial"
-import { createTileMaterial } from "./materials/tileMaterial"
-import { createUiMaterial } from "./materials/uiMaterial"
+import { Color } from "../assets/Color"
+import { Chunks } from "./Chunks"
+import { LightMaterial } from "./materials/LightMaterial"
+import { SpriteMaterial } from "./materials/SpriteMaterial"
+import { TileMaterial } from "./materials/TileMaterial"
+import { UiMaterial } from "./materials/UiMaterial"
 import type { GameState } from "../types"
 import type {
     LightInstance,
@@ -44,7 +36,7 @@ export interface RendererAssets {
     paletteTexture: THREE.Texture
 }
 
-const TILE_BATCH_CAPACITY = CHUNK_SIZE * CHUNK_SIZE * 6
+const TILE_BATCH_CAPACITY = Chunks.CHUNK_SIZE * Chunks.CHUNK_SIZE * 6
 const MAX_WORLD_SPRITES = 4096
 const MAX_UI_SPRITES = 2048
 const MAX_LIGHTS = 128
@@ -63,7 +55,7 @@ export class Renderer {
     private spriteMaterial: THREE.ShaderMaterial | null = null
     private uiMaterial: THREE.ShaderMaterial | null = null
 
-    private chunkMeshes = new Map<ChunkKey, ChunkMesh>()
+    private chunkMeshes = new Map<Chunks.ChunkKey, ChunkMesh>()
     private worldSpriteBatch: DynamicBatch | null = null
     private uiSpriteBatch: DynamicBatch | null = null
     private lightBatch: THREE.InstancedMesh | null = null
@@ -102,9 +94,9 @@ export class Renderer {
             uPixelSnap: { value: 1 },
         }
 
-        this.tileMaterial = createTileMaterial(uniforms)
-        this.spriteMaterial = createSpriteMaterial(uniforms)
-        this.uiMaterial = createUiMaterial(uniforms)
+        this.tileMaterial = TileMaterial.create(uniforms)
+        this.spriteMaterial = SpriteMaterial.create(uniforms)
+        this.uiMaterial = UiMaterial.create(uniforms)
 
         this.worldSpriteBatch = this.createBatch(
             MAX_WORLD_SPRITES,
@@ -115,7 +107,7 @@ export class Renderer {
         this.uiSpriteBatch = this.createBatch(MAX_UI_SPRITES, this.uiMaterial, this.uiScene)
         this.uiSpriteBatch.mesh.renderOrder = 200
 
-        const lightMaterial = createLightMaterial()
+        const lightMaterial = LightMaterial.create()
         const lightGeo = new THREE.PlaneGeometry(1, 1)
         this.lightBatch = new THREE.InstancedMesh(lightGeo, lightMaterial, MAX_LIGHTS)
         this.lightBatch.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
@@ -251,24 +243,27 @@ export class Renderer {
         }
 
         if (this.chunkMeshes.size === 0) {
-            const allChunks = groupTilesByChunk(mapTiles)
+            const allChunks = Chunks.groupTiles(mapTiles)
             for (const chunk of allChunks.values()) {
                 this.rebuildChunk(chunk)
             }
             return
         }
 
-        const dirty = getDirtyRegion(dirtyTiles)
+        const dirty = Chunks.dirtyRegion(dirtyTiles)
         if (!dirty) return
 
         for (let chunkY = dirty.minChunkY; chunkY <= dirty.maxChunkY; chunkY += 1) {
             for (let chunkX = dirty.minChunkX; chunkX <= dirty.maxChunkX; chunkX += 1) {
                 const tiles = mapTiles.filter((tile) => {
-                    const { chunkX: cx, chunkY: cy } = getChunkCoords(tile.worldX, tile.worldY)
+                    const { chunkX: cx, chunkY: cy } = Chunks.coords(
+                        tile.worldX,
+                        tile.worldY,
+                    )
                     return cx === chunkX && cy === chunkY
                 })
 
-                const key = createChunkKey(chunkX, chunkY)
+                const key = Chunks.key(chunkX, chunkY)
                 if (tiles.length === 0) {
                     const existing = this.chunkMeshes.get(key)
                     if (existing) {
@@ -283,7 +278,7 @@ export class Renderer {
         }
     }
 
-    private rebuildChunk(chunk: ChunkData): void {
+    private rebuildChunk(chunk: Chunks.ChunkData): void {
         if (!this.worldScene || !this.tileMaterial) return
 
         const existing = this.chunkMeshes.get(chunk.key)

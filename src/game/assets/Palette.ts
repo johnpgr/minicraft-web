@@ -1,7 +1,7 @@
 import * as THREE from "three"
 
 export namespace Palette {
-    export function createTexture(): THREE.DataTexture {
+    export function create(): THREE.DataTexture {
         const data = new Uint8Array(256 * 4)
         let index = 0
 

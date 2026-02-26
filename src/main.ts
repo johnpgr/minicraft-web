@@ -1,7 +1,7 @@
 import * as THREE from "three"
-import { Palette } from "./game/assets/palette"
-import { Color } from "./game/assets/color"
-import { tickGame, type InputState, createInitialState, findInventoryAmount } from "./game/state"
+import { Palette } from "./game/assets/Palette"
+import { Color } from "./game/assets/Color"
+import { State } from "./game/State"
 import { Renderer } from "./game/render/renderer"
 import type {
     RenderFrame,
@@ -408,7 +408,7 @@ class InputController {
     }
 }
 
-function getInputState(input: InputController): InputState {
+function getInputState(input: InputController): State.InputState {
     return {
         up: input.up.down,
         down: input.down.down,
@@ -735,7 +735,7 @@ function buildRenderFrame(
 
         addTextSprites(`SCORE ${state.player.score}`, 96, height - 16, UI_TINT, uiSprites)
         addTextSprites(
-            `SLIME ${findInventoryAmount(state.inventory, "slime")}`,
+            `SLIME ${State.inventoryAmount(state.inventory, "slime")}`,
             96,
             height - 8,
             UI_DIM_TINT,
@@ -785,7 +785,7 @@ async function loadAssets(): Promise<{
     atlasTexture.wrapT = THREE.ClampToEdgeWrapping
     atlasTexture.needsUpdate = true
 
-    const paletteTexture = Palette.createTexture()
+    const paletteTexture = Palette.create()
 
     return { atlasTexture, paletteTexture }
 }
@@ -810,7 +810,7 @@ async function bootstrap(): Promise<void> {
     const input = new InputController()
     input.bind()
 
-    const state = createInitialState()
+    const state = State.create()
     let dirtyTiles: Array<{ x: number; y: number }> = []
 
     let accumulator = 0
@@ -824,7 +824,7 @@ async function bootstrap(): Promise<void> {
 
         while (accumulator >= TICK_MS) {
             input.tick()
-            const result = tickGame(state, getInputState(input))
+            const result = State.tick(state, getInputState(input))
             dirtyTiles = result.dirtyTiles
             accumulator -= TICK_MS
         }

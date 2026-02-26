@@ -1,4 +1,4 @@
-import { generateMap } from "./mapgen"
+import { Mapgen } from "./Mapgen"
 import {
     type Direction,
     type EnemyState,
@@ -10,6 +10,7 @@ import {
     TileType,
 } from "./types"
 
+export namespace State {
 let nextEnemyId = 1
 let nextDropId = 1
 let nextTextId = 1
@@ -48,10 +49,10 @@ export interface TickResult {
     dirtyTiles: Array<{ x: number; y: number }>
 }
 
-export function createInitialState(): GameState {
+export function create(): GameState {
     const center = Math.floor(MAP_SIZE / 2)
     return {
-        map: generateMap(),
+        map: Mapgen.generate(),
         player: {
             position: { x: center, y: center },
             direction: "down",
@@ -501,7 +502,7 @@ function updatePlayerVitals(state: GameState): void {
     }
 }
 
-export function tickGame(state: GameState, input: InputState): TickResult {
+export function tick(state: GameState, input: InputState): TickResult {
     const dirtyTiles: Array<{ x: number; y: number }> = []
 
     if (state.mode === "title") {
@@ -513,7 +514,7 @@ export function tickGame(state: GameState, input: InputState): TickResult {
 
     if (state.mode === "dead") {
         if (input.attackClicked || input.menuClicked) {
-            const fresh = createInitialState()
+            const fresh = create()
             state.map = fresh.map
             state.player = fresh.player
             state.enemies = fresh.enemies
@@ -542,6 +543,7 @@ export function tickGame(state: GameState, input: InputState): TickResult {
     return { dirtyTiles }
 }
 
-export function findInventoryAmount(inventory: InventoryItem[], id: string): number {
+export function inventoryAmount(inventory: InventoryItem[], id: string): number {
     return inventory.find((item) => item.id === id)?.quantity ?? 0
+}
 }
