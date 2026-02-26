@@ -88,16 +88,14 @@ export namespace TileBuilder {
         const d = !connectsToSand(getTileType(state, x, y + 1))
         const l = !connectsToSand(getTileType(state, x - 1, y))
         const r = !connectsToSand(getTileType(state, x + 1, y))
-        const ul = !connectsToSand(getTileType(state, x - 1, y - 1))
-        const dr = !connectsToSand(getTileType(state, x + 1, y + 1))
 
-        const col = Color.get(550, 550, 121, 121)
-        const transition = Color.get(440, 550, 141, 322)
+        const col = Color.get(552, 550, 440, 440)
+        const transition = Color.get(440, 550, 440, 322)
 
-        const tl = !u && !l ? (!ul ? 0 : 3 + 1 * 32) : (l ? 11 : 12) + (u ? 0 : 1) * 32
+        const tl = !u && !l ? 0 : (l ? 11 : 12) + (u ? 0 : 1) * 32
         const tr = !u && !r ? 1 : (r ? 13 : 12) + (u ? 0 : 1) * 32
         const bl = !d && !l ? 2 : (l ? 11 : 12) + (d ? 2 : 1) * 32
-        const br = !d && !r ? (!dr ? 3 : 3 + 1 * 32) : (r ? 13 : 12) + (d ? 2 : 1) * 32
+        const br = !d && !r ? 3 : (r ? 13 : 12) + (d ? 2 : 1) * 32
 
         const tints: [number, number, number, number] = [
             !u && !l ? col : transition,
@@ -131,8 +129,8 @@ export namespace TileBuilder {
         const sr = sand(getTileType(state, x + 1, y))
 
         const col = Color.get(5, 5, 115, 115)
-        const transition1 = Color.get(3, 5, 115, -1)
-        const transition2 = Color.get(4, 5, 115, 332)
+        const transition1 = Color.get(3, 5, 211, 322)
+        const transition2 = Color.get(3, 5, 440, 550)
         const anim = (salt: number): number =>
             Math.abs((x * 97_531 + y * 31_777 + tick * 131 + salt * 71) | 0) % 4
         const animated: [boolean, boolean, boolean, boolean] = [
@@ -227,9 +225,9 @@ export namespace TileBuilder {
         const dl = tree(getTileType(state, x - 1, y + 1))
         const dr = tree(getTileType(state, x + 1, y + 1))
 
-        const col = Color.get(10, 30, 151, 141)
-        const barkCol1 = Color.get(10, 30, 430, 141)
-        const barkCol2 = Color.get(10, 30, 320, 141)
+        const col = Color.get(10, 30, 151, -1)
+        const barkCol1 = Color.get(10, 30, 430, -1)
+        const barkCol2 = Color.get(10, 30, 320, -1)
 
         const tlConnected = u && ul && l
         const trConnected = u && ur && r
@@ -292,11 +290,12 @@ export namespace TileBuilder {
             return
         }
         if (tileType === TileType.TREE) {
+            pushGrassTile(state, x, y, output)
             pushTreeTile(state, x, y, output)
             return
         }
         if (tileType === TileType.DIRT) {
-            const dirt = Color.get(322, 322, 322, 322)
+            const dirt = Color.get(322, 322, 211, 211)
             pushTileQuad(output, x, y, [0, 1, 2, 3], [dirt, dirt, dirt, dirt])
             return
         }

@@ -91,12 +91,12 @@ export namespace Input {
             if (code === "ArrowRight" || code === "KeyD" || code === "Numpad6")
                 controller.right.toggle(pressed)
 
-            if (code === "Space" || code === "ControlLeft" || code === "KeyC" || code === "Numpad0") {
+            if (code === "Space" || code === "KeyC" || code === "Numpad0") {
                 controller.attack.toggle(pressed)
                 event.preventDefault()
             }
 
-            if (code === "Tab" || code === "Enter" || code === "KeyX" || code === "AltLeft") {
+            if (code === "Tab" || code === "Enter" || code === "KeyX") {
                 controller.menu.toggle(pressed)
                 event.preventDefault()
             }

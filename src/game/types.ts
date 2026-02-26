@@ -37,6 +37,9 @@ export interface PlayerState {
     attackTime: number
     attackDir: Direction
     attackCooldown: number
+    xKnockback: number
+    yKnockback: number
+    swimTimer: number
     score: number
 }
 
