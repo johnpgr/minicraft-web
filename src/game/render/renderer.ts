@@ -42,6 +42,10 @@ const MAX_UI_SPRITES = 2048
 const MAX_LIGHTS = 128
 const WORLD_ZOOM = 16
 
+function snapWorld(value: number): number {
+    return Math.round(value * WORLD_ZOOM) / WORLD_ZOOM
+}
+
 export class Renderer {
     private renderer: THREE.WebGLRenderer | null = null
     private worldScene: THREE.Scene | null = null
@@ -354,7 +358,7 @@ export class Renderer {
         this.writeBatch(this.worldSpriteBatch, sprites.length, (index) => {
             const sprite = sprites[index]
             this.scratchMatrix.compose(
-                new THREE.Vector3(sprite.worldX, -sprite.worldY, sprite.zLayer),
+                new THREE.Vector3(snapWorld(sprite.worldX), -snapWorld(sprite.worldY), sprite.zLayer),
                 new THREE.Quaternion(),
                 new THREE.Vector3(0.5, 0.5, 1),
             )

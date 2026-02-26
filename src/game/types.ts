@@ -24,6 +24,7 @@ export type Direction = "up" | "down" | "left" | "right"
 export interface PlayerState {
     position: Position
     direction: Direction
+    walkDist: number
     health: number
     maxHealth: number
     stamina: number
@@ -91,7 +92,7 @@ export interface InventoryItem {
     quantity: number
 }
 
-export type GameMode = "title" | "playing" | "dead"
+export type GameMode = "title" | "playing" | "paused" | "dead"
 
 export interface GameState {
     map: GameTile[][]

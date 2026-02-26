@@ -16,6 +16,9 @@ float pickTint(float idx) {
 }
 
 void main() {
+  const float ATLAS_TILES = 32.0;
+  const float TILE_PIXELS = 8.0;
+
   vec2 localUv = vec2(vUvLocal.x, 1.0 - vUvLocal.y);
   if (mod(vFlipBits, 2.0) >= 1.0) {
     localUv.x = 1.0 - localUv.x;
@@ -24,10 +27,13 @@ void main() {
     localUv.y = 1.0 - localUv.y;
   }
 
+  // Match software-style sprite sampling: sample exact texel centers within each 8x8 tile.
+  vec2 pixelUv = (floor(localUv * TILE_PIXELS) + 0.5) / TILE_PIXELS;
+
   float frame = floor(vFrame + 0.5);
-  float tileX = mod(frame, 32.0);
-  float tileY = floor(frame / 32.0);
-  vec2 atlasUv = (vec2(tileX, tileY) + localUv) / 32.0;
+  float tileX = mod(frame, ATLAS_TILES);
+  float tileY = floor(frame / ATLAS_TILES);
+  vec2 atlasUv = (vec2(tileX, tileY) + pixelUv) / ATLAS_TILES;
 
   float encoded = floor(texture2D(uAtlas, atlasUv).b * 255.0 + 0.5);
   float px = floor(encoded / 64.0);

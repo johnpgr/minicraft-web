@@ -31,6 +31,15 @@ function randomDirection(): Direction {
     return "right"
 }
 
+function isPassable(type: TileType): boolean {
+    return (
+        type !== TileType.WATER &&
+        type !== TileType.ROCK &&
+        type !== TileType.TREE &&
+        type !== TileType.CACTUS
+    )
+}
+
 function tileAt(state: GameState, x: number, y: number) {
     if (x < 0 || y < 0 || x >= MAP_SIZE || y >= MAP_SIZE) return null
     return state.map[y][x]
@@ -56,6 +65,7 @@ export function create(): GameState {
         player: {
             position: { x: center, y: center },
             direction: "down",
+            walkDist: 0,
             health: 10,
             maxHealth: 10,
             stamina: 10,
@@ -105,15 +115,19 @@ function addText(state: GameState, text: string, pos: Position, tintCode: number
 }
 
 export function canMoveTo(state: GameState, x: number, y: number): boolean {
-    const tx = Math.round(x)
-    const ty = Math.round(y)
-    const tile = tileAt(state, tx, ty)
-    if (!tile) return false
+    const xr = 4 / 16
+    const yr = 3 / 16
+    const x0 = Math.floor(x - xr)
+    const x1 = Math.floor(x + xr)
+    const y0 = Math.floor(y - yr)
+    const y1 = Math.floor(y + yr)
 
-    if (tile.type === TileType.WATER) return false
-    if (tile.type === TileType.ROCK) return false
-    if (tile.type === TileType.TREE) return false
-    if (tile.type === TileType.CACTUS) return false
+    for (let ty = y0; ty <= y1; ty += 1) {
+        for (let tx = x0; tx <= x1; tx += 1) {
+            const tile = tileAt(state, tx, ty)
+            if (!tile || !isPassable(tile.type)) return false
+        }
+    }
 
     return true
 }
@@ -162,43 +176,52 @@ function spawnEnemy(state: GameState): void {
 function updatePlayerMovement(state: GameState, input: InputState): void {
     const player = state.player
 
-    let dx = 0
-    let dy = 0
+    let xa = 0
+    let ya = 0
     let direction: Direction = player.direction
 
     if (input.up) {
-        dy -= 1
+        ya -= 1
         direction = "up"
     }
     if (input.down) {
-        dy += 1
+        ya += 1
         direction = "down"
     }
     if (input.left) {
-        dx -= 1
+        xa -= 1
         direction = "left"
     }
     if (input.right) {
-        dx += 1
+        xa += 1
         direction = "right"
     }
 
     player.direction = direction
-    const moving = dx !== 0 || dy !== 0
+    const moving = xa !== 0 || ya !== 0
     player.moving = moving
 
     if (!moving) return
 
-    const len = Math.sqrt(dx * dx + dy * dy)
-    const nx = player.position.x + (dx / len) * 0.08
-    const ny = player.position.y + (dy / len) * 0.08
+    // Original Minicraft updates movement every other frame while stamina recharge delay is active.
+    if (player.staminaRechargeDelay % 2 !== 0) return
 
-    if (canMoveTo(state, nx, player.position.y)) {
-        player.position.x = nx
+    const step = 1 / 16
+    if (xa !== 0) {
+        const nx = player.position.x + xa * step
+        if (canMoveTo(state, nx, player.position.y)) {
+            player.position.x = nx
+        }
     }
-    if (canMoveTo(state, player.position.x, ny)) {
-        player.position.y = ny
+    if (ya !== 0) {
+        const ny = player.position.y + ya * step
+        if (canMoveTo(state, player.position.x, ny)) {
+            player.position.y = ny
+        }
     }
+
+    // Keep animation phase tied to movement progress and preserve mid-step pose when stopping.
+    player.walkDist += 1
 }
 
 function getAttackTargetRect(state: GameState): { x0: number; y0: number; x1: number; y1: number } {
@@ -272,7 +295,6 @@ function handleAttack(
 
     player.stamina -= 1
     player.staminaRecharge = 0
-    player.staminaRechargeDelay = 10
     player.attackTime = 8
     player.attackCooldown = 8
     player.attackDir = player.direction
@@ -302,6 +324,8 @@ function updateEnemyAI(state: GameState): void {
     const player = state.player
 
     for (const enemy of state.enemies) {
+        const prevX = enemy.position.x
+        const prevY = enemy.position.y
         enemy.tickTime += 1
 
         if (enemy.hurtTime > 0) enemy.hurtTime -= 1
@@ -364,6 +388,10 @@ function updateEnemyAI(state: GameState): void {
         if (enemy.xa > 0) enemy.direction = "right"
         if (enemy.ya < 0) enemy.direction = "up"
         if (enemy.ya > 0) enemy.direction = "down"
+
+        if (enemy.position.x !== prevX || enemy.position.y !== prevY) {
+            enemy.walkDist += 1
+        }
     }
 }
 
@@ -525,6 +553,18 @@ export function tick(state: GameState, input: InputState): TickResult {
             state.gameTime = 0
             state.mode = "title"
         }
+        return { dirtyTiles }
+    }
+
+    if (state.mode === "paused") {
+        if (input.attackClicked || input.menuClicked) {
+            state.mode = "playing"
+        }
+        return { dirtyTiles }
+    }
+
+    if (input.menuClicked) {
+        state.mode = "paused"
         return { dirtyTiles }
     }
 
