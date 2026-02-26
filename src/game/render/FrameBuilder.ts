@@ -17,6 +17,7 @@ export namespace FrameBuilder {
             cameraY: state.player.position.y,
             mapChunksByKey: mapBuild.mapChunksByKey,
             dirtyChunkKeys: mapBuild.dirtyChunkKeys,
+            animatedChunkKeys: mapBuild.animatedChunkKeys,
             sprites: WorldSpriteBuilder.buildWorldSprites(state),
             uiSprites: UiBuilder.buildUiSprites(state, width, height),
             lights: [],

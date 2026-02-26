@@ -10,6 +10,14 @@ export namespace UiBuilder {
     const MENU_BORDER_TINT = Color.get(-1, 1, 5, 445)
     const MENU_FILL_TINT = Color.get(5, 5, 5, 5)
     const FONT_ROW = 30
+    const FONT_INDEX_BY_CODE = new Int16Array(128).fill(-1)
+
+    for (let i = 0; i < FONT_CHARS.length; i += 1) {
+        const code = FONT_CHARS.charCodeAt(i)
+        if (code < FONT_INDEX_BY_CODE.length) {
+            FONT_INDEX_BY_CODE[code] = i
+        }
+    }
 
     function addTextSprites(
         text: string,
@@ -20,7 +28,8 @@ export namespace UiBuilder {
     ): void {
         const upper = text.toUpperCase()
         for (let i = 0; i < upper.length; i += 1) {
-            const index = FONT_CHARS.indexOf(upper[i])
+            const code = upper.charCodeAt(i)
+            const index = code < FONT_INDEX_BY_CODE.length ? FONT_INDEX_BY_CODE[code] : -1
             if (index < 0) continue
             output.push({
                 screenX: x + i * 8,

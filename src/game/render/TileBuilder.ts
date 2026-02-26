@@ -1,7 +1,13 @@
 import { Color } from "../assets/Color"
 import { type GameState, TileType } from "../types"
 import { Chunks } from "./Chunks"
-import type { MapChunkBuildResult, MapChunkData, MapChunkKey, TileInstance } from "./types"
+import type {
+    MapChunkBuildResult,
+    MapChunkData,
+    MapChunkKey,
+    TileInstance,
+    WaterAnimInstance,
+} from "./types"
 
 export namespace TileBuilder {
     const WATER_ANIM_TICK_DIVISOR = 10
@@ -109,6 +115,7 @@ export namespace TileBuilder {
         y: number,
         tick: number,
         output: TileInstance[],
+        waterAnim: WaterAnimInstance[],
     ): void {
         const liquid = (type: TileType | null): boolean => type === TileType.WATER
         const sand = (type: TileType | null): boolean => type === TileType.SAND
@@ -128,19 +135,26 @@ export namespace TileBuilder {
         const transition2 = Color.get(4, 5, 115, 332)
         const anim = (salt: number): number =>
             Math.abs((x * 97_531 + y * 31_777 + tick * 131 + salt * 71) | 0) % 4
+        const animated: [boolean, boolean, boolean, boolean] = [
+            !u && !l,
+            !u && !r,
+            !d && !l,
+            !d && !r,
+        ]
+        const baseIndex = output.length
 
         const frames: [number, number, number, number] = [
-            !u && !l ? anim(0) : (l ? 14 : 15) + (u ? 0 : 1) * 32,
-            !u && !r ? anim(1) : (r ? 16 : 15) + (u ? 0 : 1) * 32,
-            !d && !l ? anim(2) : (l ? 14 : 15) + (d ? 2 : 1) * 32,
-            !d && !r ? anim(3) : (r ? 16 : 15) + (d ? 2 : 1) * 32,
+            animated[0] ? anim(0) : (l ? 14 : 15) + (u ? 0 : 1) * 32,
+            animated[1] ? anim(1) : (r ? 16 : 15) + (u ? 0 : 1) * 32,
+            animated[2] ? anim(2) : (l ? 14 : 15) + (d ? 2 : 1) * 32,
+            animated[3] ? anim(3) : (r ? 16 : 15) + (d ? 2 : 1) * 32,
         ]
 
         const flips: [number, number, number, number] = [
-            !u && !l ? anim(4) : 0,
-            !u && !r ? anim(5) : 0,
-            !d && !l ? anim(6) : 0,
-            !d && !r ? anim(7) : 0,
+            animated[0] ? anim(4) : 0,
+            animated[1] ? anim(5) : 0,
+            animated[2] ? anim(6) : 0,
+            animated[3] ? anim(7) : 0,
         ]
 
         const tints: [number, number, number, number] = [
@@ -151,6 +165,16 @@ export namespace TileBuilder {
         ]
 
         pushTileQuad(output, x, y, frames, tints, flips)
+        for (let i = 0; i < 4; i += 1) {
+            if (!animated[i]) continue
+            waterAnim.push({
+                instanceIndex: baseIndex + i,
+                tileX: x,
+                tileY: y,
+                frameSalt: i,
+                flipSalt: i + 4,
+            })
+        }
     }
 
     function pushRockTile(state: GameState, x: number, y: number, output: TileInstance[]): void {
@@ -235,6 +259,7 @@ export namespace TileBuilder {
         y: number,
         tick: number,
         output: TileInstance[],
+        waterAnim: WaterAnimInstance[],
     ): void {
         const tileType = state.map[y][x].type
         if (tileType === TileType.GRASS) {
@@ -259,7 +284,7 @@ export namespace TileBuilder {
             return
         }
         if (tileType === TileType.WATER) {
-            pushWaterTile(state, x, y, tick, output)
+            pushWaterTile(state, x, y, tick, output, waterAnim)
             return
         }
         if (tileType === TileType.ROCK) {
@@ -376,11 +401,12 @@ export namespace TileBuilder {
         }
 
         const tiles: TileInstance[] = []
+        const waterAnim: WaterAnimInstance[] = []
         let hasWater = false
 
         for (let y = startY; y <= endY; y += 1) {
             for (let x = startX; x <= endX; x += 1) {
-                buildTileInstances(state, x, y, tick, tiles)
+                buildTileInstances(state, x, y, tick, tiles, waterAnim)
                 if (state.map[y][x].type === TileType.WATER) {
                     hasWater = true
                 }
@@ -392,11 +418,27 @@ export namespace TileBuilder {
             chunkX,
             chunkY,
             tiles,
+            waterAnim,
         })
         if (hasWater) {
             waterChunkKeys.add(chunkKey)
         } else {
             waterChunkKeys.delete(chunkKey)
+        }
+    }
+
+    function applyWaterAnimation(chunk: MapChunkData, tick: number): void {
+        if (chunk.waterAnim.length === 0) return
+        for (const anim of chunk.waterAnim) {
+            const frame = Math.abs(
+                (anim.tileX * 97_531 + anim.tileY * 31_777 + tick * 131 + anim.frameSalt * 71) | 0,
+            ) % 4
+            const flip = Math.abs(
+                (anim.tileX * 97_531 + anim.tileY * 31_777 + tick * 131 + anim.flipSalt * 71) | 0,
+            ) % 4
+            const tile = chunk.tiles[anim.instanceIndex]
+            tile.tileId = frame
+            tile.flipBits = flip
         }
     }
 
@@ -409,6 +451,7 @@ export namespace TileBuilder {
             return {
                 mapChunksByKey: cachedMapChunksByKey,
                 dirtyChunkKeys: new Set<MapChunkKey>(),
+                animatedChunkKeys: new Set<MapChunkKey>(),
             }
         }
 
@@ -421,6 +464,7 @@ export namespace TileBuilder {
         const waterAnimTick = Math.floor(state.tickCount / WATER_ANIM_TICK_DIVISOR)
 
         const dirtyChunkKeys = new Set<MapChunkKey>()
+        const animatedChunkKeys = new Set<MapChunkKey>()
         if (cachedMapChunksByKey.size === 0 || mapChanged) {
             for (const chunkKey of allChunkKeys(state)) {
                 dirtyChunkKeys.add(chunkKey)
@@ -433,7 +477,12 @@ export namespace TileBuilder {
 
         if (waterAnimTick !== lastAnimatedTick) {
             for (const chunkKey of waterChunkKeys) {
+                if (dirtyChunkKeys.has(chunkKey)) continue
+                const chunk = cachedMapChunksByKey.get(chunkKey)
+                if (!chunk) continue
+                applyWaterAnimation(chunk, waterAnimTick)
                 dirtyChunkKeys.add(chunkKey)
+                animatedChunkKeys.add(chunkKey)
             }
             lastAnimatedTick = waterAnimTick
         }
@@ -445,6 +494,7 @@ export namespace TileBuilder {
         return {
             mapChunksByKey: cachedMapChunksByKey,
             dirtyChunkKeys,
+            animatedChunkKeys,
         }
     }
 }

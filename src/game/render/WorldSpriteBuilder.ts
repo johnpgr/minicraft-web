@@ -15,6 +15,14 @@ export namespace WorldSpriteBuilder {
     const SPRITE_RIGHT_X = 0.25
     const SPRITE_TOP_Y = -7 / 16
     const SPRITE_BOTTOM_Y = 1 / 16
+    const FONT_INDEX_BY_CODE = new Int16Array(128).fill(-1)
+
+    for (let i = 0; i < FONT_CHARS.length; i += 1) {
+        const code = FONT_CHARS.charCodeAt(i)
+        if (code < FONT_INDEX_BY_CODE.length) {
+            FONT_INDEX_BY_CODE[code] = i
+        }
+    }
 
     export function buildWorldSprites(state: GameState): SpriteInstance[] {
         const sprites: SpriteInstance[] = []
@@ -169,9 +177,10 @@ export namespace WorldSpriteBuilder {
         }
 
         for (const text of state.floatingTexts) {
+            const upper = text.text.toUpperCase()
             for (let i = 0; i < text.text.length; i += 1) {
-                const ch = text.text[i].toUpperCase()
-                const index = FONT_CHARS.indexOf(ch)
+                const code = upper.charCodeAt(i)
+                const index = code < FONT_INDEX_BY_CODE.length ? FONT_INDEX_BY_CODE[code] : -1
                 if (index < 0) continue
                 sprites.push({
                     worldX: text.position.x - text.text.length * 0.2 + i * 0.3,

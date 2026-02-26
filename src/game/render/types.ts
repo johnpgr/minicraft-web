@@ -15,11 +15,21 @@ export interface MapChunkData {
     chunkX: number
     chunkY: number
     tiles: TileInstance[]
+    waterAnim: WaterAnimInstance[]
 }
 
 export interface MapChunkBuildResult {
     mapChunksByKey: Map<MapChunkKey, MapChunkData>
     dirtyChunkKeys: Set<MapChunkKey>
+    animatedChunkKeys: Set<MapChunkKey>
+}
+
+export interface WaterAnimInstance {
+    instanceIndex: number
+    tileX: number
+    tileY: number
+    frameSalt: number
+    flipSalt: number
 }
 
 export interface SpriteInstance {
@@ -51,6 +61,7 @@ export interface RenderFrame {
     cameraY: number
     mapChunksByKey: Map<MapChunkKey, MapChunkData>
     dirtyChunkKeys: Set<MapChunkKey>
+    animatedChunkKeys: Set<MapChunkKey>
     sprites: SpriteInstance[]
     uiSprites: UiSpriteInstance[]
     lights: LightInstance[]

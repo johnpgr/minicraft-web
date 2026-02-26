@@ -159,7 +159,7 @@ export class Renderer {
             return
         }
 
-        this.syncChunks(frame.mapChunksByKey, frame.dirtyChunkKeys)
+        this.syncChunks(frame.mapChunksByKey, frame.dirtyChunkKeys, frame.animatedChunkKeys)
         this.updateWorldSprites(frame.sprites)
         this.updateUiSprites(frame.uiSprites)
         this.updateLights(frame.lights)
@@ -171,7 +171,7 @@ export class Renderer {
         this.renderer.clear()
         this.renderer.render(this.worldScene, this.worldCamera)
         this.renderer.autoClear = false
-        if (this.lightScene) {
+        if (this.lightScene && this.lightBatch && this.lightBatch.count > 0) {
             this.renderer.render(this.lightScene, this.worldCamera)
         }
         this.renderer.render(this.uiScene, this.uiCamera)
@@ -240,9 +240,28 @@ export class Renderer {
         return { mesh, frameAttr, flipAttr, tintAttr, alphaAttr, maxInstances }
     }
 
+    private markAttributeRange(
+        attribute: THREE.InstancedBufferAttribute,
+        start: number,
+        count: number,
+    ): void {
+        if (count <= 0) return
+        attribute.clearUpdateRanges()
+        attribute.addUpdateRange(start, count)
+        attribute.needsUpdate = true
+    }
+
+    private markMatrixRange(matrix: THREE.InstancedBufferAttribute, countInstances: number): void {
+        if (countInstances <= 0) return
+        matrix.clearUpdateRanges()
+        matrix.addUpdateRange(0, countInstances * 16)
+        matrix.needsUpdate = true
+    }
+
     private syncChunks(
         mapChunksByKey: Map<MapChunkKey, MapChunkData>,
         dirtyChunkKeys: Set<MapChunkKey>,
+        animatedChunkKeys: Set<MapChunkKey>,
     ): void {
         if (!this.worldScene || !this.tileMaterial) return
 
@@ -271,7 +290,11 @@ export class Renderer {
                 continue
             }
 
-            this.updateChunkMesh(chunk)
+            if (animatedChunkKeys.has(chunkKey)) {
+                this.updateChunkAnimation(chunk)
+            } else {
+                this.updateChunkMesh(chunk)
+            }
         }
     }
 
@@ -357,14 +380,42 @@ export class Renderer {
         }
 
         mesh.count = count
-        mesh.instanceMatrix.needsUpdate = true
-        frameAttr.needsUpdate = true
-        flipAttr.needsUpdate = true
-        tintAttr.needsUpdate = true
-        alphaAttr.needsUpdate = true
+        this.markMatrixRange(mesh.instanceMatrix, count)
+        this.markAttributeRange(frameAttr, 0, count)
+        this.markAttributeRange(flipAttr, 0, count)
+        this.markAttributeRange(tintAttr, 0, count * 4)
+        this.markAttributeRange(alphaAttr, 0, count)
         if (!mesh.boundingBox || !mesh.boundingSphere) {
             mesh.computeBoundingBox()
             mesh.computeBoundingSphere()
+        }
+    }
+
+    private updateChunkAnimation(chunk: MapChunkData): void {
+        const chunkMesh = this.chunkMeshes.get(chunk.key)
+        if (!chunkMesh) {
+            this.updateChunkMesh(chunk)
+            return
+        }
+        if (chunk.waterAnim.length === 0) return
+
+        const { frameAttr, flipAttr } = chunkMesh
+        let minIndex = Number.POSITIVE_INFINITY
+        let maxIndex = Number.NEGATIVE_INFINITY
+
+        for (const anim of chunk.waterAnim) {
+            const index = anim.instanceIndex
+            const tile = chunk.tiles[index]
+            frameAttr.setX(index, tile.tileId + tile.variant)
+            flipAttr.setX(index, tile.flipBits)
+            minIndex = Math.min(minIndex, index)
+            maxIndex = Math.max(maxIndex, index)
+        }
+
+        if (maxIndex >= minIndex) {
+            const range = maxIndex - minIndex + 1
+            this.markAttributeRange(frameAttr, minIndex, range)
+            this.markAttributeRange(flipAttr, minIndex, range)
         }
     }
 
@@ -372,6 +423,9 @@ export class Renderer {
         if (!this.worldSpriteBatch) return
 
         const count = Math.min(sprites.length, this.worldSpriteBatch.maxInstances)
+        this.worldSpriteBatch.mesh.count = count
+        if (count === 0) return
+
         const tintArray = this.worldSpriteBatch.tintAttr.array as Float32Array
         for (let i = 0; i < count; i += 1) {
             const sprite = sprites[i]
@@ -397,18 +451,20 @@ export class Renderer {
             this.worldSpriteBatch.alphaAttr.setX(i, sprite.alpha)
         }
 
-        this.worldSpriteBatch.mesh.count = count
-        this.worldSpriteBatch.mesh.instanceMatrix.needsUpdate = true
-        this.worldSpriteBatch.frameAttr.needsUpdate = true
-        this.worldSpriteBatch.flipAttr.needsUpdate = true
-        this.worldSpriteBatch.tintAttr.needsUpdate = true
-        this.worldSpriteBatch.alphaAttr.needsUpdate = true
+        this.markMatrixRange(this.worldSpriteBatch.mesh.instanceMatrix, count)
+        this.markAttributeRange(this.worldSpriteBatch.frameAttr, 0, count)
+        this.markAttributeRange(this.worldSpriteBatch.flipAttr, 0, count)
+        this.markAttributeRange(this.worldSpriteBatch.tintAttr, 0, count * 4)
+        this.markAttributeRange(this.worldSpriteBatch.alphaAttr, 0, count)
     }
 
     private updateUiSprites(uiSprites: UiSpriteInstance[]): void {
         if (!this.uiSpriteBatch) return
 
         const count = Math.min(uiSprites.length, this.uiSpriteBatch.maxInstances)
+        this.uiSpriteBatch.mesh.count = count
+        if (count === 0) return
+
         const tintArray = this.uiSpriteBatch.tintAttr.array as Float32Array
         for (let i = 0; i < count; i += 1) {
             const sprite = uiSprites[i]
@@ -434,17 +490,19 @@ export class Renderer {
             this.uiSpriteBatch.alphaAttr.setX(i, 1)
         }
 
-        this.uiSpriteBatch.mesh.count = count
-        this.uiSpriteBatch.mesh.instanceMatrix.needsUpdate = true
-        this.uiSpriteBatch.frameAttr.needsUpdate = true
-        this.uiSpriteBatch.flipAttr.needsUpdate = true
-        this.uiSpriteBatch.tintAttr.needsUpdate = true
-        this.uiSpriteBatch.alphaAttr.needsUpdate = true
+        this.markMatrixRange(this.uiSpriteBatch.mesh.instanceMatrix, count)
+        this.markAttributeRange(this.uiSpriteBatch.frameAttr, 0, count)
+        this.markAttributeRange(this.uiSpriteBatch.flipAttr, 0, count)
+        this.markAttributeRange(this.uiSpriteBatch.tintAttr, 0, count * 4)
+        this.markAttributeRange(this.uiSpriteBatch.alphaAttr, 0, count)
     }
 
     private updateLights(lights: LightInstance[]): void {
         if (!this.lightBatch) return
         const count = Math.min(lights.length, MAX_LIGHTS)
+        this.lightBatch.count = count
+        if (count === 0) return
+
         for (let i = 0; i < count; i += 1) {
             const light = lights[i]
             this.scratchMatrix.compose(
@@ -454,7 +512,6 @@ export class Renderer {
             )
             this.lightBatch.setMatrixAt(i, this.scratchMatrix)
         }
-        this.lightBatch.count = count
-        this.lightBatch.instanceMatrix.needsUpdate = true
+        this.markMatrixRange(this.lightBatch.instanceMatrix, count)
     }
 }
