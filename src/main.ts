@@ -78,22 +78,27 @@ async function bootstrap(): Promise<void> {
         const delta = now - last
         last = now
         accumulator += Math.min(delta, 100)
+        const isFocused = document.visibilityState === "visible" && document.hasFocus()
 
         while (accumulator >= TICK_MS) {
             input.tick()
             const result = State.tick(state, Input.getInputState(input))
             dirtyTiles = result.dirtyTiles
             accumulator -= TICK_MS
-            ticks += 1
+            if (isFocused) ticks += 1
         }
 
         const viewport = Viewport.getRenderViewportSize()
         const renderFrame = FrameBuilder.buildRenderFrame(state, dirtyTiles, viewport.width, viewport.height)
         renderer.render(state, renderFrame)
-        frames += 1
+        if (isFocused) frames += 1
         dirtyTiles = []
 
-        if (now - lastStats >= 1000) {
+        if (!isFocused) {
+            lastStats = now
+            frames = 0
+            ticks = 0
+        } else if (now - lastStats >= 1000) {
             console.log(`${ticks} ticks, ${frames} fps`)
             lastStats += 1000
             frames = 0
