@@ -1,74 +1,108 @@
 import { State } from "../State"
 
 export namespace Input {
-    class KeyAction {
-        presses = 0
-        absorbs = 0
-        down = false
-        clicked = false
-
-        toggle(pressed: boolean): void {
-            if (pressed !== this.down) {
-                this.down = pressed
-            }
-            if (pressed) {
-                this.presses += 1
-            }
-        }
-
-        tick(): void {
-            if (this.absorbs < this.presses) {
-                this.absorbs += 1
-                this.clicked = true
-            } else {
-                this.clicked = false
-            }
-        }
+    export interface KeyAction {
+        presses: number
+        absorbs: number
+        down: boolean
+        clicked: boolean
+        toggle: (pressed: boolean) => void
+        tick: () => void
     }
 
-    export class InputController {
-        up = new KeyAction()
-        down = new KeyAction()
-        left = new KeyAction()
-        right = new KeyAction()
-        attack = new KeyAction()
-        menu = new KeyAction()
+    export interface InputController {
+        up: KeyAction
+        down: KeyAction
+        left: KeyAction
+        right: KeyAction
+        attack: KeyAction
+        menu: KeyAction
+        tick: () => void
+        releaseAll: () => void
+        bind: () => void
+    }
 
-        private allKeys = [this.up, this.down, this.left, this.right, this.attack, this.menu]
-
-        tick(): void {
-            for (const key of this.allKeys) key.tick()
+    function createKeyAction(): KeyAction {
+        const action: KeyAction = {
+            presses: 0,
+            absorbs: 0,
+            down: false,
+            clicked: false,
+            toggle: (pressed: boolean) => {
+                if (pressed !== action.down) {
+                    action.down = pressed
+                }
+                if (pressed) {
+                    action.presses += 1
+                }
+            },
+            tick: () => {
+                if (action.absorbs < action.presses) {
+                    action.absorbs += 1
+                    action.clicked = true
+                } else {
+                    action.clicked = false
+                }
+            },
         }
 
-        releaseAll(): void {
-            for (const key of this.allKeys) key.down = false
+        return action
+    }
+
+    export function createInputController(): InputController {
+        const controller: InputController = {
+            up: createKeyAction(),
+            down: createKeyAction(),
+            left: createKeyAction(),
+            right: createKeyAction(),
+            attack: createKeyAction(),
+            menu: createKeyAction(),
+            tick: () => {
+                for (const key of allKeys) key.tick()
+            },
+            releaseAll: () => {
+                for (const key of allKeys) key.down = false
+            },
+            bind: () => {
+                window.addEventListener("keydown", (event) => toggle(event, true))
+                window.addEventListener("keyup", (event) => toggle(event, false))
+                window.addEventListener("blur", () => controller.releaseAll())
+            },
         }
 
-        bind(): void {
-            window.addEventListener("keydown", (event) => this.toggle(event, true))
-            window.addEventListener("keyup", (event) => this.toggle(event, false))
-            window.addEventListener("blur", () => this.releaseAll())
-        }
+        const allKeys = [
+            controller.up,
+            controller.down,
+            controller.left,
+            controller.right,
+            controller.attack,
+            controller.menu,
+        ]
 
-        private toggle(event: KeyboardEvent, pressed: boolean): void {
+        const toggle = (event: KeyboardEvent, pressed: boolean): void => {
             const code = event.code
 
-            if (code === "ArrowUp" || code === "KeyW" || code === "Numpad8") this.up.toggle(pressed)
-            if (code === "ArrowDown" || code === "KeyS" || code === "Numpad2") this.down.toggle(pressed)
-            if (code === "ArrowLeft" || code === "KeyA" || code === "Numpad4") this.left.toggle(pressed)
+            if (code === "ArrowUp" || code === "KeyW" || code === "Numpad8")
+                controller.up.toggle(pressed)
+            if (code === "ArrowDown" || code === "KeyS" || code === "Numpad2")
+                controller.down.toggle(pressed)
+            if (code === "ArrowLeft" || code === "KeyA" || code === "Numpad4")
+                controller.left.toggle(pressed)
             if (code === "ArrowRight" || code === "KeyD" || code === "Numpad6")
-                this.right.toggle(pressed)
+                controller.right.toggle(pressed)
 
             if (code === "Space" || code === "ControlLeft" || code === "KeyC" || code === "Numpad0") {
-                this.attack.toggle(pressed)
+                controller.attack.toggle(pressed)
                 event.preventDefault()
             }
 
             if (code === "Tab" || code === "Enter" || code === "KeyX" || code === "AltLeft") {
-                this.menu.toggle(pressed)
+                controller.menu.toggle(pressed)
                 event.preventDefault()
             }
         }
+
+        return controller
     }
 
     export function getInputState(input: InputController): State.InputState {

@@ -124,44 +124,93 @@ export namespace TileBuilder {
         const d = !liquid(getTileType(state, x, y + 1))
         const l = !liquid(getTileType(state, x - 1, y))
         const r = !liquid(getTileType(state, x + 1, y))
+        const ul = !liquid(getTileType(state, x - 1, y - 1))
+        const ur = !liquid(getTileType(state, x + 1, y - 1))
+        const dl = !liquid(getTileType(state, x - 1, y + 1))
+        const dr = !liquid(getTileType(state, x + 1, y + 1))
 
         const su = sand(getTileType(state, x, y - 1))
         const sd = sand(getTileType(state, x, y + 1))
         const sl = sand(getTileType(state, x - 1, y))
         const sr = sand(getTileType(state, x + 1, y))
+        const sul = sand(getTileType(state, x - 1, y - 1))
+        const sur = sand(getTileType(state, x + 1, y - 1))
+        const sdl = sand(getTileType(state, x - 1, y + 1))
+        const sdr = sand(getTileType(state, x + 1, y + 1))
 
         const col = Color.get(5, 5, 115, 115)
         const transition1 = Color.get(3, 5, 115, -1)
         const transition2 = Color.get(4, 5, 115, 332)
         const anim = (salt: number): number =>
             Math.abs((x * 97_531 + y * 31_777 + tick * 131 + salt * 71) | 0) % 4
+        const cornerExposed: [boolean, boolean, boolean, boolean] = [ul, ur, dl, dr]
         const animated: [boolean, boolean, boolean, boolean] = [
-            !u && !l,
-            !u && !r,
-            !d && !l,
-            !d && !r,
+            !u && !l && !cornerExposed[0],
+            !u && !r && !cornerExposed[1],
+            !d && !l && !cornerExposed[2],
+            !d && !r && !cornerExposed[3],
         ]
         const baseIndex = output.length
 
         const frames: [number, number, number, number] = [
-            animated[0] ? anim(0) : (l ? 14 : 15) + (u ? 0 : 1) * 32,
-            animated[1] ? anim(1) : (r ? 16 : 15) + (u ? 0 : 1) * 32,
-            animated[2] ? anim(2) : (l ? 14 : 15) + (d ? 2 : 1) * 32,
-            animated[3] ? anim(3) : (r ? 16 : 15) + (d ? 2 : 1) * 32,
+            animated[0]
+                ? anim(0)
+                : !u && !l
+                  ? 7 + 0 * 32
+                  : (l ? 14 : 15) + (u ? 0 : 1) * 32,
+            animated[1]
+                ? anim(1)
+                : !u && !r
+                  ? 8 + 0 * 32
+                  : (r ? 16 : 15) + (u ? 0 : 1) * 32,
+            animated[2]
+                ? anim(2)
+                : !d && !l
+                  ? 7 + 1 * 32
+                  : (l ? 14 : 15) + (d ? 2 : 1) * 32,
+            animated[3]
+                ? anim(3)
+                : !d && !r
+                  ? 8 + 1 * 32
+                  : (r ? 16 : 15) + (d ? 2 : 1) * 32,
         ]
 
         const flips: [number, number, number, number] = [
-            animated[0] ? anim(4) : 0,
-            animated[1] ? anim(5) : 0,
-            animated[2] ? anim(6) : 0,
-            animated[3] ? anim(7) : 0,
+            animated[0] ? anim(4) : !u && !l ? 3 : 0,
+            animated[1] ? anim(5) : !u && !r ? 3 : 0,
+            animated[2] ? anim(6) : !d && !l ? 3 : 0,
+            animated[3] ? anim(7) : !d && !r ? 3 : 0,
         ]
 
         const tints: [number, number, number, number] = [
-            !u && !l ? col : su || sl ? transition2 : transition1,
-            !u && !r ? col : su || sr ? transition2 : transition1,
-            !d && !l ? col : sd || sl ? transition2 : transition1,
-            !d && !r ? col : sd || sr ? transition2 : transition1,
+            !u && !l
+                ? cornerExposed[0]
+                    ? su || sl || sul ? transition2 : transition1
+                    : col
+                : su || sl
+                  ? transition2
+                  : transition1,
+            !u && !r
+                ? cornerExposed[1]
+                    ? su || sr || sur ? transition2 : transition1
+                    : col
+                : su || sr
+                  ? transition2
+                  : transition1,
+            !d && !l
+                ? cornerExposed[2]
+                    ? sd || sl || sdl ? transition2 : transition1
+                    : col
+                : sd || sl
+                  ? transition2
+                  : transition1,
+            !d && !r
+                ? cornerExposed[3]
+                    ? sd || sr || sdr ? transition2 : transition1
+                    : col
+                : sd || sr
+                  ? transition2
+                  : transition1,
         ]
 
         pushTileQuad(output, x, y, frames, tints, flips)

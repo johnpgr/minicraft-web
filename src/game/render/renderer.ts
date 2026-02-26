@@ -1,10 +1,24 @@
-import * as THREE from "three"
+import {
+    DynamicDrawUsage,
+    InstancedBufferAttribute,
+    InstancedMesh,
+    Material,
+    Matrix4,
+    OrthographicCamera,
+    PlaneGeometry,
+    Quaternion,
+    Scene,
+    ShaderMaterial,
+    Texture,
+    Vector3,
+    WebGLRenderer,
+} from "three"
+import type { GameState } from "../types"
 import { Chunks } from "./Chunks"
 import { LightMaterial } from "./materials/LightMaterial"
 import { SpriteMaterial } from "./materials/SpriteMaterial"
 import { TileMaterial } from "./materials/TileMaterial"
 import { UiMaterial } from "./materials/UiMaterial"
-import type { GameState } from "../types"
 import type {
     LightInstance,
     MapChunkData,
@@ -15,25 +29,25 @@ import type {
 } from "./types"
 
 interface ChunkMesh {
-    mesh: THREE.InstancedMesh
-    frameAttr: THREE.InstancedBufferAttribute
-    flipAttr: THREE.InstancedBufferAttribute
-    tintAttr: THREE.InstancedBufferAttribute
-    alphaAttr: THREE.InstancedBufferAttribute
+    mesh: InstancedMesh
+    frameAttr: InstancedBufferAttribute
+    flipAttr: InstancedBufferAttribute
+    tintAttr: InstancedBufferAttribute
+    alphaAttr: InstancedBufferAttribute
 }
 
 interface DynamicBatch {
-    mesh: THREE.InstancedMesh
-    frameAttr: THREE.InstancedBufferAttribute
-    flipAttr: THREE.InstancedBufferAttribute
-    tintAttr: THREE.InstancedBufferAttribute
-    alphaAttr: THREE.InstancedBufferAttribute
+    mesh: InstancedMesh
+    frameAttr: InstancedBufferAttribute
+    flipAttr: InstancedBufferAttribute
+    tintAttr: InstancedBufferAttribute
+    alphaAttr: InstancedBufferAttribute
     maxInstances: number
 }
 
 export interface RendererAssets {
-    atlasTexture: THREE.Texture
-    paletteTexture: THREE.Texture
+    atlasTexture: Texture
+    paletteTexture: Texture
 }
 
 const TILE_BATCH_CAPACITY = Chunks.CHUNK_SIZE * Chunks.CHUNK_SIZE * 6
@@ -46,472 +60,467 @@ function snapWorld(value: number): number {
     return Math.round(value * WORLD_ZOOM) / WORLD_ZOOM
 }
 
-export class Renderer {
-    private renderer: THREE.WebGLRenderer | null = null
-    private worldScene: THREE.Scene | null = null
-    private lightScene: THREE.Scene | null = null
-    private uiScene: THREE.Scene | null = null
+export namespace Renderer {
+    export interface Controller {
+        init: (canvas: HTMLCanvasElement, assets: RendererAssets) => void
+        resize: (width: number, height: number) => void
+        render: (_state: GameState, frame: RenderFrame) => void
+        dispose: () => void
+    }
 
-    private worldCamera: THREE.OrthographicCamera | null = null
-    private uiCamera: THREE.OrthographicCamera | null = null
+    export function create(): Controller {
+        let renderer: WebGLRenderer | null = null
+        let worldScene: Scene | null = null
+        let lightScene: Scene | null = null
+        let uiScene: Scene | null = null
 
-    private tileMaterial: THREE.ShaderMaterial | null = null
-    private spriteMaterial: THREE.ShaderMaterial | null = null
-    private uiMaterial: THREE.ShaderMaterial | null = null
+        let worldCamera: OrthographicCamera | null = null
+        let uiCamera: OrthographicCamera | null = null
 
-    private chunkMeshes = new Map<Chunks.ChunkKey, ChunkMesh>()
-    private worldSpriteBatch: DynamicBatch | null = null
-    private uiSpriteBatch: DynamicBatch | null = null
-    private lightBatch: THREE.InstancedMesh | null = null
+        let tileMaterial: ShaderMaterial | null = null
+        let spriteMaterial: ShaderMaterial | null = null
+        let uiMaterial: ShaderMaterial | null = null
 
-    private scratchMatrix = new THREE.Matrix4()
-    private scratchPos = new THREE.Vector3()
-    private scratchQuat = new THREE.Quaternion()
-    private scratchScale = new THREE.Vector3(1, 1, 1)
-    private viewportHeight = 0
-    private initialized = false
+        const chunkMeshes = new Map<MapChunkKey, ChunkMesh>()
+        let worldSpriteBatch: DynamicBatch | null = null
+        let uiSpriteBatch: DynamicBatch | null = null
+        let lightBatch: InstancedMesh | null = null
 
-    init(canvas: HTMLCanvasElement, assets: RendererAssets): void {
-        this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false })
-        this.renderer.setPixelRatio(1)
-        this.renderer.setSize(window.innerWidth, window.innerHeight, false)
-        this.renderer.autoClear = true
+        const scratchMatrix = new Matrix4()
+        const scratchPos = new Vector3()
+        const scratchQuat = new Quaternion()
+        const scratchScale = new Vector3(1, 1, 1)
+        let viewportHeight = 0
+        let initialized = false
 
-        this.worldScene = new THREE.Scene()
-        this.lightScene = new THREE.Scene()
-        this.uiScene = new THREE.Scene()
-        this.viewportHeight = window.innerHeight
+        function init(canvas: HTMLCanvasElement, assets: RendererAssets): void {
+            renderer = new WebGLRenderer({ canvas, antialias: false, alpha: false })
+            renderer.setPixelRatio(1)
+            renderer.setSize(window.innerWidth, window.innerHeight, false)
+            renderer.autoClear = true
 
-        this.worldCamera = new THREE.OrthographicCamera(-10, 10, 10, -10, -100, 100)
-        this.worldCamera.position.set(0, 0, 10)
+            worldScene = new Scene()
+            lightScene = new Scene()
+            uiScene = new Scene()
+            viewportHeight = window.innerHeight
 
-        this.uiCamera = new THREE.OrthographicCamera(
-            0,
-            window.innerWidth,
-            window.innerHeight,
-            0,
-            -100,
-            100,
-        )
-        this.uiCamera.position.set(0, 0, 10)
+            worldCamera = new OrthographicCamera(-10, 10, 10, -10, -100, 100)
+            worldCamera.position.set(0, 0, 10)
 
-        const uniforms = {
-            uAtlas: { value: assets.atlasTexture },
-            uPalette: { value: assets.paletteTexture },
-            uPixelSnap: { value: 1 },
+            uiCamera = new OrthographicCamera(
+                0,
+                window.innerWidth,
+                window.innerHeight,
+                0,
+                -100,
+                100,
+            )
+            uiCamera.position.set(0, 0, 10)
+
+            const uniforms = {
+                uAtlas: { value: assets.atlasTexture },
+                uPalette: { value: assets.paletteTexture },
+                uPixelSnap: { value: 1 },
+            }
+
+            tileMaterial = TileMaterial.create(uniforms)
+            spriteMaterial = SpriteMaterial.create(uniforms)
+            uiMaterial = UiMaterial.create(uniforms)
+
+            worldSpriteBatch = createBatch(MAX_WORLD_SPRITES, spriteMaterial, worldScene)
+            worldSpriteBatch.mesh.renderOrder = 100
+            uiSpriteBatch = createBatch(MAX_UI_SPRITES, uiMaterial, uiScene)
+            uiSpriteBatch.mesh.renderOrder = 200
+
+            const lightMaterial = LightMaterial.create()
+            const lightGeo = new PlaneGeometry(1, 1)
+            lightBatch = new InstancedMesh(lightGeo, lightMaterial, MAX_LIGHTS)
+            lightBatch.instanceMatrix.setUsage(DynamicDrawUsage)
+            lightBatch.frustumCulled = false
+            lightBatch.renderOrder = 150
+            lightBatch.count = 0
+            lightScene.add(lightBatch)
+
+            initialized = true
         }
 
-        this.tileMaterial = TileMaterial.create(uniforms)
-        this.spriteMaterial = SpriteMaterial.create(uniforms)
-        this.uiMaterial = UiMaterial.create(uniforms)
+        function resize(width: number, height: number): void {
+            if (!renderer || !worldCamera || !uiCamera) return
 
-        this.worldSpriteBatch = this.createBatch(
-            MAX_WORLD_SPRITES,
-            this.spriteMaterial,
-            this.worldScene,
-        )
-        this.worldSpriteBatch.mesh.renderOrder = 100
-        this.uiSpriteBatch = this.createBatch(MAX_UI_SPRITES, this.uiMaterial, this.uiScene)
-        this.uiSpriteBatch.mesh.renderOrder = 200
+            renderer.setSize(width, height, false)
+            viewportHeight = height
 
-        const lightMaterial = LightMaterial.create()
-        const lightGeo = new THREE.PlaneGeometry(1, 1)
-        this.lightBatch = new THREE.InstancedMesh(lightGeo, lightMaterial, MAX_LIGHTS)
-        this.lightBatch.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
-        this.lightBatch.frustumCulled = false
-        this.lightBatch.renderOrder = 150
-        this.lightBatch.count = 0
-        this.lightScene.add(this.lightBatch)
+            const halfW = width / (2 * WORLD_ZOOM)
+            const halfH = height / (2 * WORLD_ZOOM)
+            worldCamera.left = -halfW
+            worldCamera.right = halfW
+            worldCamera.top = halfH
+            worldCamera.bottom = -halfH
+            worldCamera.updateProjectionMatrix()
 
-        this.initialized = true
-    }
-
-    resize(width: number, height: number): void {
-        if (!this.renderer || !this.worldCamera || !this.uiCamera) return
-
-        this.renderer.setSize(width, height, false)
-        this.viewportHeight = height
-
-        const halfW = width / (2 * WORLD_ZOOM)
-        const halfH = height / (2 * WORLD_ZOOM)
-        this.worldCamera.left = -halfW
-        this.worldCamera.right = halfW
-        this.worldCamera.top = halfH
-        this.worldCamera.bottom = -halfH
-        this.worldCamera.updateProjectionMatrix()
-
-        this.uiCamera.left = 0
-        this.uiCamera.right = width
-        this.uiCamera.top = height
-        this.uiCamera.bottom = 0
-        this.uiCamera.updateProjectionMatrix()
-    }
-
-    render(state: GameState, frame: RenderFrame): void {
-        if (
-            !this.initialized ||
-            !this.renderer ||
-            !this.worldScene ||
-            !this.uiScene ||
-            !this.worldCamera ||
-            !this.uiCamera
-        ) {
-            return
+            uiCamera.left = 0
+            uiCamera.right = width
+            uiCamera.top = height
+            uiCamera.bottom = 0
+            uiCamera.updateProjectionMatrix()
         }
 
-        this.syncChunks(frame.mapChunksByKey, frame.dirtyChunkKeys, frame.animatedChunkKeys)
-        this.updateWorldSprites(frame.sprites)
-        this.updateUiSprites(frame.uiSprites)
-        this.updateLights(frame.lights)
+        function render(_state: GameState, frame: RenderFrame): void {
+            if (!initialized || !renderer || !worldScene || !uiScene || !worldCamera || !uiCamera) {
+                return
+            }
 
-        this.worldCamera.position.x = Math.round(frame.cameraX * WORLD_ZOOM) / WORLD_ZOOM
-        this.worldCamera.position.y = -Math.round(frame.cameraY * WORLD_ZOOM) / WORLD_ZOOM
+            syncChunks(frame.mapChunksByKey, frame.dirtyChunkKeys, frame.animatedChunkKeys)
+            updateWorldSprites(frame.sprites)
+            updateUiSprites(frame.uiSprites)
+            updateLights(frame.lights)
 
-        this.renderer.setClearColor(0x000000)
-        this.renderer.clear()
-        this.renderer.render(this.worldScene, this.worldCamera)
-        this.renderer.autoClear = false
-        if (this.lightScene && this.lightBatch && this.lightBatch.count > 0) {
-            this.renderer.render(this.lightScene, this.worldCamera)
-        }
-        this.renderer.render(this.uiScene, this.uiCamera)
-        this.renderer.autoClear = true
-    }
+            worldCamera.position.x = Math.round(frame.cameraX * WORLD_ZOOM) / WORLD_ZOOM
+            worldCamera.position.y = -Math.round(frame.cameraY * WORLD_ZOOM) / WORLD_ZOOM
 
-    dispose(): void {
-        for (const chunk of this.chunkMeshes.values()) {
-            chunk.mesh.geometry.dispose()
-            this.worldScene?.remove(chunk.mesh)
-        }
-        this.chunkMeshes.clear()
-
-        this.worldSpriteBatch?.mesh.geometry.dispose()
-        this.uiSpriteBatch?.mesh.geometry.dispose()
-
-        if (this.lightBatch) {
-            this.lightBatch.geometry.dispose()
-            ;(this.lightBatch.material as THREE.Material).dispose()
+            renderer.setClearColor(0x000000)
+            renderer.clear()
+            renderer.render(worldScene, worldCamera)
+            renderer.autoClear = false
+            if (lightScene && lightBatch && lightBatch.count > 0) {
+                renderer.render(lightScene, worldCamera)
+            }
+            renderer.render(uiScene, uiCamera)
+            renderer.autoClear = true
         }
 
-        this.tileMaterial?.dispose()
-        this.spriteMaterial?.dispose()
-        this.uiMaterial?.dispose()
-        this.renderer?.dispose()
-
-        this.renderer = null
-        this.worldScene = null
-        this.uiScene = null
-        this.lightScene = null
-        this.worldCamera = null
-        this.uiCamera = null
-        this.tileMaterial = null
-        this.spriteMaterial = null
-        this.uiMaterial = null
-        this.initialized = false
-    }
-
-    private createBatch(
-        maxInstances: number,
-        material: THREE.ShaderMaterial,
-        scene: THREE.Scene,
-    ): DynamicBatch {
-        const geometry = new THREE.PlaneGeometry(1, 1)
-        const mesh = new THREE.InstancedMesh(geometry, material, maxInstances)
-        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
-        mesh.frustumCulled = false
-
-        const frameAttr = new THREE.InstancedBufferAttribute(new Float32Array(maxInstances), 1)
-        const flipAttr = new THREE.InstancedBufferAttribute(new Float32Array(maxInstances), 1)
-        const tintAttr = new THREE.InstancedBufferAttribute(new Float32Array(maxInstances * 4), 4)
-        const alphaAttr = new THREE.InstancedBufferAttribute(new Float32Array(maxInstances), 1)
-        frameAttr.setUsage(THREE.DynamicDrawUsage)
-        flipAttr.setUsage(THREE.DynamicDrawUsage)
-        tintAttr.setUsage(THREE.DynamicDrawUsage)
-        alphaAttr.setUsage(THREE.DynamicDrawUsage)
-
-        mesh.geometry.setAttribute("aFrame", frameAttr)
-        mesh.geometry.setAttribute("aFlipBits", flipAttr)
-        mesh.geometry.setAttribute("aTint", tintAttr)
-        mesh.geometry.setAttribute("aAlpha", alphaAttr)
-
-        mesh.count = 0
-        scene.add(mesh)
-
-        return { mesh, frameAttr, flipAttr, tintAttr, alphaAttr, maxInstances }
-    }
-
-    private markAttributeRange(
-        attribute: THREE.InstancedBufferAttribute,
-        start: number,
-        count: number,
-    ): void {
-        if (count <= 0) return
-        attribute.clearUpdateRanges()
-        attribute.addUpdateRange(start, count)
-        attribute.needsUpdate = true
-    }
-
-    private markMatrixRange(matrix: THREE.InstancedBufferAttribute, countInstances: number): void {
-        if (countInstances <= 0) return
-        matrix.clearUpdateRanges()
-        matrix.addUpdateRange(0, countInstances * 16)
-        matrix.needsUpdate = true
-    }
-
-    private syncChunks(
-        mapChunksByKey: Map<MapChunkKey, MapChunkData>,
-        dirtyChunkKeys: Set<MapChunkKey>,
-        animatedChunkKeys: Set<MapChunkKey>,
-    ): void {
-        if (!this.worldScene || !this.tileMaterial) return
-
-        if (mapChunksByKey.size === 0) {
-            for (const chunk of this.chunkMeshes.values()) {
-                this.worldScene.remove(chunk.mesh)
+        function dispose(): void {
+            for (const chunk of chunkMeshes.values()) {
                 chunk.mesh.geometry.dispose()
+                worldScene?.remove(chunk.mesh)
             }
-            this.chunkMeshes.clear()
-            return
-        }
+            chunkMeshes.clear()
 
-        if (this.chunkMeshes.size === 0) {
-            for (const chunk of mapChunksByKey.values()) {
-                this.updateChunkMesh(chunk)
-            }
-            return
-        }
+            worldSpriteBatch?.mesh.geometry.dispose()
+            uiSpriteBatch?.mesh.geometry.dispose()
 
-        if (dirtyChunkKeys.size === 0) return
-
-        for (const chunkKey of dirtyChunkKeys) {
-            const chunk = mapChunksByKey.get(chunkKey)
-            if (!chunk) {
-                this.removeChunkMesh(chunkKey)
-                continue
+            if (lightBatch) {
+                lightBatch.geometry.dispose()
+                ;(lightBatch.material as Material).dispose()
             }
 
-            if (animatedChunkKeys.has(chunkKey)) {
-                this.updateChunkAnimation(chunk)
-            } else {
-                this.updateChunkMesh(chunk)
+            tileMaterial?.dispose()
+            spriteMaterial?.dispose()
+            uiMaterial?.dispose()
+            renderer?.dispose()
+
+            renderer = null
+            worldScene = null
+            uiScene = null
+            lightScene = null
+            worldCamera = null
+            uiCamera = null
+            tileMaterial = null
+            spriteMaterial = null
+            uiMaterial = null
+            worldSpriteBatch = null
+            uiSpriteBatch = null
+            lightBatch = null
+            initialized = false
+        }
+
+        function createBatch(
+            maxInstances: number,
+            material: ShaderMaterial,
+            scene: Scene,
+        ): DynamicBatch {
+            const geometry = new PlaneGeometry(1, 1)
+            const mesh = new InstancedMesh(geometry, material, maxInstances)
+            mesh.instanceMatrix.setUsage(DynamicDrawUsage)
+            mesh.frustumCulled = false
+
+            const frameAttr = new InstancedBufferAttribute(new Float32Array(maxInstances), 1)
+            const flipAttr = new InstancedBufferAttribute(new Float32Array(maxInstances), 1)
+            const tintAttr = new InstancedBufferAttribute(new Float32Array(maxInstances * 4), 4)
+            const alphaAttr = new InstancedBufferAttribute(new Float32Array(maxInstances), 1)
+            frameAttr.setUsage(DynamicDrawUsage)
+            flipAttr.setUsage(DynamicDrawUsage)
+            tintAttr.setUsage(DynamicDrawUsage)
+            alphaAttr.setUsage(DynamicDrawUsage)
+
+            mesh.geometry.setAttribute("aFrame", frameAttr)
+            mesh.geometry.setAttribute("aFlipBits", flipAttr)
+            mesh.geometry.setAttribute("aTint", tintAttr)
+            mesh.geometry.setAttribute("aAlpha", alphaAttr)
+
+            mesh.count = 0
+            scene.add(mesh)
+
+            return { mesh, frameAttr, flipAttr, tintAttr, alphaAttr, maxInstances }
+        }
+
+        function markAttributeRange(
+            attribute: InstancedBufferAttribute,
+            start: number,
+            count: number,
+        ): void {
+            if (count <= 0) return
+            attribute.clearUpdateRanges()
+            attribute.addUpdateRange(start, count)
+            attribute.needsUpdate = true
+        }
+
+        function markMatrixRange(matrix: InstancedBufferAttribute, countInstances: number): void {
+            if (countInstances <= 0) return
+            matrix.clearUpdateRanges()
+            matrix.addUpdateRange(0, countInstances * 16)
+            matrix.needsUpdate = true
+        }
+
+        function syncChunks(
+            mapChunksByKey: Map<MapChunkKey, MapChunkData>,
+            dirtyChunkKeys: Set<MapChunkKey>,
+            animatedChunkKeys: Set<MapChunkKey>,
+        ): void {
+            if (!worldScene || !tileMaterial) return
+
+            if (mapChunksByKey.size === 0) {
+                for (const chunk of chunkMeshes.values()) {
+                    worldScene.remove(chunk.mesh)
+                    chunk.mesh.geometry.dispose()
+                }
+                chunkMeshes.clear()
+                return
+            }
+
+            if (chunkMeshes.size === 0) {
+                for (const chunk of mapChunksByKey.values()) {
+                    updateChunkMesh(chunk)
+                }
+                return
+            }
+
+            if (dirtyChunkKeys.size === 0) return
+
+            for (const chunkKey of dirtyChunkKeys) {
+                const chunk = mapChunksByKey.get(chunkKey)
+                if (!chunk) {
+                    removeChunkMesh(chunkKey)
+                    continue
+                }
+
+                if (animatedChunkKeys.has(chunkKey)) {
+                    updateChunkAnimation(chunk)
+                } else {
+                    updateChunkMesh(chunk)
+                }
             }
         }
-    }
 
-    private removeChunkMesh(chunkKey: MapChunkKey): void {
-        const existing = this.chunkMeshes.get(chunkKey)
-        if (!existing) return
-        this.worldScene?.remove(existing.mesh)
-        existing.mesh.geometry.dispose()
-        this.chunkMeshes.delete(chunkKey)
-    }
-
-    private createChunkMesh(chunkKey: MapChunkKey): ChunkMesh | null {
-        if (!this.worldScene || !this.tileMaterial) return null
-
-        const geometry = new THREE.PlaneGeometry(1, 1)
-        const mesh = new THREE.InstancedMesh(geometry, this.tileMaterial, TILE_BATCH_CAPACITY)
-        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
-        mesh.frustumCulled = true
-        mesh.renderOrder = 10
-
-        const frameAttr = new THREE.InstancedBufferAttribute(
-            new Float32Array(TILE_BATCH_CAPACITY),
-            1,
-        )
-        const flipAttr = new THREE.InstancedBufferAttribute(
-            new Float32Array(TILE_BATCH_CAPACITY),
-            1,
-        )
-        const tintAttr = new THREE.InstancedBufferAttribute(
-            new Float32Array(TILE_BATCH_CAPACITY * 4),
-            4,
-        )
-        const alphaAttr = new THREE.InstancedBufferAttribute(
-            new Float32Array(TILE_BATCH_CAPACITY),
-            1,
-        )
-        frameAttr.setUsage(THREE.DynamicDrawUsage)
-        flipAttr.setUsage(THREE.DynamicDrawUsage)
-        tintAttr.setUsage(THREE.DynamicDrawUsage)
-        alphaAttr.setUsage(THREE.DynamicDrawUsage)
-
-        mesh.geometry.setAttribute("aFrame", frameAttr)
-        mesh.geometry.setAttribute("aFlipBits", flipAttr)
-        mesh.geometry.setAttribute("aTint", tintAttr)
-        mesh.geometry.setAttribute("aAlpha", alphaAttr)
-
-        mesh.count = 0
-        this.worldScene.add(mesh)
-        const chunkMesh = { mesh, frameAttr, flipAttr, tintAttr, alphaAttr }
-        this.chunkMeshes.set(chunkKey, chunkMesh)
-        return chunkMesh
-    }
-
-    private updateChunkMesh(chunk: MapChunkData): void {
-        let chunkMesh = this.chunkMeshes.get(chunk.key)
-        if (!chunkMesh) {
-            chunkMesh = this.createChunkMesh(chunk.key)
-            if (!chunkMesh) return
+        function removeChunkMesh(chunkKey: MapChunkKey): void {
+            const existing = chunkMeshes.get(chunkKey)
+            if (!existing) return
+            worldScene?.remove(existing.mesh)
+            existing.mesh.geometry.dispose()
+            chunkMeshes.delete(chunkKey)
         }
 
-        const { mesh, frameAttr, flipAttr, tintAttr, alphaAttr } = chunkMesh
-        const tintArray = tintAttr.array as Float32Array
-        let count = 0
-        for (const tile of chunk.tiles) {
-            if (count >= TILE_BATCH_CAPACITY) break
-            this.scratchMatrix.compose(
-                this.scratchPos.set(tile.worldX, -tile.worldY, 0),
-                this.scratchQuat,
-                this.scratchScale.set(tile.scale, tile.scale, 1),
+        function createChunkMesh(chunkKey: MapChunkKey): ChunkMesh | null {
+            if (!worldScene || !tileMaterial) return null
+
+            const geometry = new PlaneGeometry(1, 1)
+            const mesh = new InstancedMesh(geometry, tileMaterial, TILE_BATCH_CAPACITY)
+            mesh.instanceMatrix.setUsage(DynamicDrawUsage)
+            mesh.frustumCulled = true
+            mesh.renderOrder = 10
+
+            const frameAttr = new InstancedBufferAttribute(new Float32Array(TILE_BATCH_CAPACITY), 1)
+            const flipAttr = new InstancedBufferAttribute(new Float32Array(TILE_BATCH_CAPACITY), 1)
+            const tintAttr = new InstancedBufferAttribute(
+                new Float32Array(TILE_BATCH_CAPACITY * 4),
+                4,
             )
-            mesh.setMatrixAt(count, this.scratchMatrix)
+            const alphaAttr = new InstancedBufferAttribute(new Float32Array(TILE_BATCH_CAPACITY), 1)
+            frameAttr.setUsage(DynamicDrawUsage)
+            flipAttr.setUsage(DynamicDrawUsage)
+            tintAttr.setUsage(DynamicDrawUsage)
+            alphaAttr.setUsage(DynamicDrawUsage)
 
-            frameAttr.setX(count, tile.tileId + tile.variant)
-            flipAttr.setX(count, tile.flipBits)
-            const base = count * 4
-            const tintCode = tile.tintCode
-            tintArray[base] = tintCode & 255
-            tintArray[base + 1] = (tintCode >>> 8) & 255
-            tintArray[base + 2] = (tintCode >>> 16) & 255
-            tintArray[base + 3] = (tintCode >>> 24) & 255
-            alphaAttr.setX(count, 1)
-            count += 1
+            mesh.geometry.setAttribute("aFrame", frameAttr)
+            mesh.geometry.setAttribute("aFlipBits", flipAttr)
+            mesh.geometry.setAttribute("aTint", tintAttr)
+            mesh.geometry.setAttribute("aAlpha", alphaAttr)
+
+            mesh.count = 0
+            worldScene.add(mesh)
+            const chunkMesh = { mesh, frameAttr, flipAttr, tintAttr, alphaAttr }
+            chunkMeshes.set(chunkKey, chunkMesh)
+            return chunkMesh
         }
 
-        mesh.count = count
-        this.markMatrixRange(mesh.instanceMatrix, count)
-        this.markAttributeRange(frameAttr, 0, count)
-        this.markAttributeRange(flipAttr, 0, count)
-        this.markAttributeRange(tintAttr, 0, count * 4)
-        this.markAttributeRange(alphaAttr, 0, count)
-        if (!mesh.boundingBox || !mesh.boundingSphere) {
-            mesh.computeBoundingBox()
-            mesh.computeBoundingSphere()
-        }
-    }
+        function updateChunkMesh(chunk: MapChunkData): void {
+            let chunkMesh = chunkMeshes.get(chunk.key)
+            if (!chunkMesh) {
+                chunkMesh = createChunkMesh(chunk.key)
+                if (!chunkMesh) return
+            }
 
-    private updateChunkAnimation(chunk: MapChunkData): void {
-        const chunkMesh = this.chunkMeshes.get(chunk.key)
-        if (!chunkMesh) {
-            this.updateChunkMesh(chunk)
-            return
-        }
-        if (chunk.waterAnim.length === 0) return
+            const { mesh, frameAttr, flipAttr, tintAttr, alphaAttr } = chunkMesh
+            const tintArray = tintAttr.array as Float32Array
+            let count = 0
+            for (const tile of chunk.tiles) {
+                if (count >= TILE_BATCH_CAPACITY) break
+                scratchMatrix.compose(
+                    scratchPos.set(tile.worldX, -tile.worldY, 0),
+                    scratchQuat,
+                    scratchScale.set(tile.scale, tile.scale, 1),
+                )
+                mesh.setMatrixAt(count, scratchMatrix)
 
-        const { frameAttr, flipAttr } = chunkMesh
-        let minIndex = Number.POSITIVE_INFINITY
-        let maxIndex = Number.NEGATIVE_INFINITY
+                frameAttr.setX(count, tile.tileId + tile.variant)
+                flipAttr.setX(count, tile.flipBits)
+                const base = count * 4
+                const tintCode = tile.tintCode
+                tintArray[base] = tintCode & 255
+                tintArray[base + 1] = (tintCode >>> 8) & 255
+                tintArray[base + 2] = (tintCode >>> 16) & 255
+                tintArray[base + 3] = (tintCode >>> 24) & 255
+                alphaAttr.setX(count, 1)
+                count += 1
+            }
 
-        for (const anim of chunk.waterAnim) {
-            const index = anim.instanceIndex
-            const tile = chunk.tiles[index]
-            frameAttr.setX(index, tile.tileId + tile.variant)
-            flipAttr.setX(index, tile.flipBits)
-            minIndex = Math.min(minIndex, index)
-            maxIndex = Math.max(maxIndex, index)
-        }
-
-        if (maxIndex >= minIndex) {
-            const range = maxIndex - minIndex + 1
-            this.markAttributeRange(frameAttr, minIndex, range)
-            this.markAttributeRange(flipAttr, minIndex, range)
-        }
-    }
-
-    private updateWorldSprites(sprites: SpriteInstance[]): void {
-        if (!this.worldSpriteBatch) return
-
-        const count = Math.min(sprites.length, this.worldSpriteBatch.maxInstances)
-        this.worldSpriteBatch.mesh.count = count
-        if (count === 0) return
-
-        const tintArray = this.worldSpriteBatch.tintAttr.array as Float32Array
-        for (let i = 0; i < count; i += 1) {
-            const sprite = sprites[i]
-            this.scratchMatrix.compose(
-                this.scratchPos.set(
-                    snapWorld(sprite.worldX),
-                    -snapWorld(sprite.worldY),
-                    sprite.zLayer,
-                ),
-                this.scratchQuat,
-                this.scratchScale.set(0.5, 0.5, 1),
-            )
-            this.worldSpriteBatch.mesh.setMatrixAt(i, this.scratchMatrix)
-
-            this.worldSpriteBatch.frameAttr.setX(i, sprite.frameId)
-            this.worldSpriteBatch.flipAttr.setX(i, sprite.flipBits)
-            const base = i * 4
-            const tintCode = sprite.tintCode
-            tintArray[base] = tintCode & 255
-            tintArray[base + 1] = (tintCode >>> 8) & 255
-            tintArray[base + 2] = (tintCode >>> 16) & 255
-            tintArray[base + 3] = (tintCode >>> 24) & 255
-            this.worldSpriteBatch.alphaAttr.setX(i, sprite.alpha)
+            mesh.count = count
+            markMatrixRange(mesh.instanceMatrix, count)
+            markAttributeRange(frameAttr, 0, count)
+            markAttributeRange(flipAttr, 0, count)
+            markAttributeRange(tintAttr, 0, count * 4)
+            markAttributeRange(alphaAttr, 0, count)
+            if (!mesh.boundingBox || !mesh.boundingSphere) {
+                mesh.computeBoundingBox()
+                mesh.computeBoundingSphere()
+            }
         }
 
-        this.markMatrixRange(this.worldSpriteBatch.mesh.instanceMatrix, count)
-        this.markAttributeRange(this.worldSpriteBatch.frameAttr, 0, count)
-        this.markAttributeRange(this.worldSpriteBatch.flipAttr, 0, count)
-        this.markAttributeRange(this.worldSpriteBatch.tintAttr, 0, count * 4)
-        this.markAttributeRange(this.worldSpriteBatch.alphaAttr, 0, count)
-    }
+        function updateChunkAnimation(chunk: MapChunkData): void {
+            const chunkMesh = chunkMeshes.get(chunk.key)
+            if (!chunkMesh) {
+                updateChunkMesh(chunk)
+                return
+            }
+            if (chunk.waterAnim.length === 0) return
 
-    private updateUiSprites(uiSprites: UiSpriteInstance[]): void {
-        if (!this.uiSpriteBatch) return
+            const { frameAttr, flipAttr } = chunkMesh
+            let minIndex = Number.POSITIVE_INFINITY
+            let maxIndex = Number.NEGATIVE_INFINITY
 
-        const count = Math.min(uiSprites.length, this.uiSpriteBatch.maxInstances)
-        this.uiSpriteBatch.mesh.count = count
-        if (count === 0) return
+            for (const anim of chunk.waterAnim) {
+                const index = anim.instanceIndex
+                const tile = chunk.tiles[index]
+                frameAttr.setX(index, tile.tileId + tile.variant)
+                flipAttr.setX(index, tile.flipBits)
+                minIndex = Math.min(minIndex, index)
+                maxIndex = Math.max(maxIndex, index)
+            }
 
-        const tintArray = this.uiSpriteBatch.tintAttr.array as Float32Array
-        for (let i = 0; i < count; i += 1) {
-            const sprite = uiSprites[i]
-            this.scratchMatrix.compose(
-                this.scratchPos.set(
-                    sprite.screenX + 4,
-                    this.viewportHeight - (sprite.screenY + 4),
-                    0,
-                ),
-                this.scratchQuat,
-                this.scratchScale.set(8, 8, 1),
-            )
-            this.uiSpriteBatch.mesh.setMatrixAt(i, this.scratchMatrix)
-
-            this.uiSpriteBatch.frameAttr.setX(i, sprite.frameId)
-            this.uiSpriteBatch.flipAttr.setX(i, sprite.flipBits)
-            const base = i * 4
-            const tintCode = sprite.tintCode
-            tintArray[base] = tintCode & 255
-            tintArray[base + 1] = (tintCode >>> 8) & 255
-            tintArray[base + 2] = (tintCode >>> 16) & 255
-            tintArray[base + 3] = (tintCode >>> 24) & 255
-            this.uiSpriteBatch.alphaAttr.setX(i, 1)
+            if (maxIndex >= minIndex) {
+                const range = maxIndex - minIndex + 1
+                markAttributeRange(frameAttr, minIndex, range)
+                markAttributeRange(flipAttr, minIndex, range)
+            }
         }
 
-        this.markMatrixRange(this.uiSpriteBatch.mesh.instanceMatrix, count)
-        this.markAttributeRange(this.uiSpriteBatch.frameAttr, 0, count)
-        this.markAttributeRange(this.uiSpriteBatch.flipAttr, 0, count)
-        this.markAttributeRange(this.uiSpriteBatch.tintAttr, 0, count * 4)
-        this.markAttributeRange(this.uiSpriteBatch.alphaAttr, 0, count)
-    }
+        function updateWorldSprites(sprites: SpriteInstance[]): void {
+            if (!worldSpriteBatch) return
 
-    private updateLights(lights: LightInstance[]): void {
-        if (!this.lightBatch) return
-        const count = Math.min(lights.length, MAX_LIGHTS)
-        this.lightBatch.count = count
-        if (count === 0) return
+            const count = Math.min(sprites.length, worldSpriteBatch.maxInstances)
+            worldSpriteBatch.mesh.count = count
+            if (count === 0) return
 
-        for (let i = 0; i < count; i += 1) {
-            const light = lights[i]
-            this.scratchMatrix.compose(
-                this.scratchPos.set(light.worldX, -light.worldY, 2),
-                this.scratchQuat,
-                this.scratchScale.set(light.radiusTiles * 2, light.radiusTiles * 2, 1),
-            )
-            this.lightBatch.setMatrixAt(i, this.scratchMatrix)
+            const tintArray = worldSpriteBatch.tintAttr.array as Float32Array
+            for (let i = 0; i < count; i += 1) {
+                const sprite = sprites[i]
+                scratchMatrix.compose(
+                    scratchPos.set(
+                        snapWorld(sprite.worldX),
+                        -snapWorld(sprite.worldY),
+                        sprite.zLayer,
+                    ),
+                    scratchQuat,
+                    scratchScale.set(0.5, 0.5, 1),
+                )
+                worldSpriteBatch.mesh.setMatrixAt(i, scratchMatrix)
+
+                worldSpriteBatch.frameAttr.setX(i, sprite.frameId)
+                worldSpriteBatch.flipAttr.setX(i, sprite.flipBits)
+                const base = i * 4
+                const tintCode = sprite.tintCode
+                tintArray[base] = tintCode & 255
+                tintArray[base + 1] = (tintCode >>> 8) & 255
+                tintArray[base + 2] = (tintCode >>> 16) & 255
+                tintArray[base + 3] = (tintCode >>> 24) & 255
+                worldSpriteBatch.alphaAttr.setX(i, sprite.alpha)
+            }
+
+            markMatrixRange(worldSpriteBatch.mesh.instanceMatrix, count)
+            markAttributeRange(worldSpriteBatch.frameAttr, 0, count)
+            markAttributeRange(worldSpriteBatch.flipAttr, 0, count)
+            markAttributeRange(worldSpriteBatch.tintAttr, 0, count * 4)
+            markAttributeRange(worldSpriteBatch.alphaAttr, 0, count)
         }
-        this.markMatrixRange(this.lightBatch.instanceMatrix, count)
+
+        function updateUiSprites(uiSprites: UiSpriteInstance[]): void {
+            if (!uiSpriteBatch) return
+
+            const count = Math.min(uiSprites.length, uiSpriteBatch.maxInstances)
+            uiSpriteBatch.mesh.count = count
+            if (count === 0) return
+
+            const tintArray = uiSpriteBatch.tintAttr.array as Float32Array
+            for (let i = 0; i < count; i += 1) {
+                const sprite = uiSprites[i]
+                scratchMatrix.compose(
+                    scratchPos.set(sprite.screenX + 4, viewportHeight - (sprite.screenY + 4), 0),
+                    scratchQuat,
+                    scratchScale.set(8, 8, 1),
+                )
+                uiSpriteBatch.mesh.setMatrixAt(i, scratchMatrix)
+
+                uiSpriteBatch.frameAttr.setX(i, sprite.frameId)
+                uiSpriteBatch.flipAttr.setX(i, sprite.flipBits)
+                const base = i * 4
+                const tintCode = sprite.tintCode
+                tintArray[base] = tintCode & 255
+                tintArray[base + 1] = (tintCode >>> 8) & 255
+                tintArray[base + 2] = (tintCode >>> 16) & 255
+                tintArray[base + 3] = (tintCode >>> 24) & 255
+                uiSpriteBatch.alphaAttr.setX(i, 1)
+            }
+
+            markMatrixRange(uiSpriteBatch.mesh.instanceMatrix, count)
+            markAttributeRange(uiSpriteBatch.frameAttr, 0, count)
+            markAttributeRange(uiSpriteBatch.flipAttr, 0, count)
+            markAttributeRange(uiSpriteBatch.tintAttr, 0, count * 4)
+            markAttributeRange(uiSpriteBatch.alphaAttr, 0, count)
+        }
+
+        function updateLights(lights: LightInstance[]): void {
+            if (!lightBatch) return
+            const count = Math.min(lights.length, MAX_LIGHTS)
+            lightBatch.count = count
+            if (count === 0) return
+
+            for (let i = 0; i < count; i += 1) {
+                const light = lights[i]
+                scratchMatrix.compose(
+                    scratchPos.set(light.worldX, -light.worldY, 2),
+                    scratchQuat,
+                    scratchScale.set(light.radiusTiles * 2, light.radiusTiles * 2, 1),
+                )
+                lightBatch.setMatrixAt(i, scratchMatrix)
+            }
+            markMatrixRange(lightBatch.instanceMatrix, count)
+        }
+
+        return {
+            init,
+            resize,
+            render,
+            dispose,
+        }
     }
 }

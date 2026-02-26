@@ -1,14 +1,14 @@
-import * as THREE from "three"
 import lightVertexShader from "./shaders/light.vert.glsl?raw"
 import lightFragmentShader from "./shaders/light.frag.glsl?raw"
+import { NormalBlending, ShaderMaterial } from "three"
 
 export namespace LightMaterial {
-    export function create(): THREE.ShaderMaterial {
-        return new THREE.ShaderMaterial({
+    export function create(): ShaderMaterial {
+        return new ShaderMaterial({
             transparent: true,
             depthWrite: false,
             depthTest: false,
-            blending: THREE.NormalBlending,
+            blending: NormalBlending,
             uniforms: {
                 uIntensity: { value: 0.4 },
             },

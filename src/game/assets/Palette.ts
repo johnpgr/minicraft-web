@@ -1,7 +1,7 @@
-import * as THREE from "three"
+import { ClampToEdgeWrapping, DataTexture, NearestFilter, RGBAFormat } from "three"
 
 export namespace Palette {
-    export function create(): THREE.DataTexture {
+    export function create(): DataTexture {
         const data = new Uint8Array(256 * 4)
         let index = 0
 
@@ -34,13 +34,13 @@ export namespace Palette {
             index += 1
         }
 
-        const texture = new THREE.DataTexture(data, 256, 1, THREE.RGBAFormat)
+        const texture = new DataTexture(data, 256, 1, RGBAFormat)
         texture.needsUpdate = true
-        texture.magFilter = THREE.NearestFilter
-        texture.minFilter = THREE.NearestFilter
+        texture.magFilter = NearestFilter
+        texture.minFilter = NearestFilter
         texture.generateMipmaps = false
-        texture.wrapS = THREE.ClampToEdgeWrapping
-        texture.wrapT = THREE.ClampToEdgeWrapping
+        texture.wrapS = ClampToEdgeWrapping
+        texture.wrapT = ClampToEdgeWrapping
         return texture
     }
 }

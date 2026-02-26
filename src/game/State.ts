@@ -45,6 +45,32 @@ function tileAt(state: GameState, x: number, y: number) {
     return state.map[y][x]
 }
 
+function findStartPosition(map: GameState["map"]): Position {
+    const center = Math.floor(MAP_SIZE / 2)
+    if (isPassable(map[center][center].type)) {
+        return { x: center, y: center }
+    }
+
+    for (let radius = 1; radius < MAP_SIZE; radius += 1) {
+        const minX = Math.max(0, center - radius)
+        const maxX = Math.min(MAP_SIZE - 1, center + radius)
+        const minY = Math.max(0, center - radius)
+        const maxY = Math.min(MAP_SIZE - 1, center + radius)
+
+        for (let y = minY; y <= maxY; y += 1) {
+            for (let x = minX; x <= maxX; x += 1) {
+                const onBorder = x === minX || x === maxX || y === minY || y === maxY
+                if (!onBorder) continue
+                if (isPassable(map[y][x].type)) {
+                    return { x, y }
+                }
+            }
+        }
+    }
+
+    return { x: center, y: center }
+}
+
 export interface InputState {
     up: boolean
     down: boolean
@@ -61,11 +87,12 @@ export interface TickResult {
 }
 
 export function create(): GameState {
-    const center = Math.floor(MAP_SIZE / 2)
+    const map = Mapgen.generate()
+    const startPosition = findStartPosition(map)
     return {
-        map: Mapgen.generate(),
+        map,
         player: {
-            position: { x: center, y: center },
+            position: startPosition,
             direction: "down",
             walkDist: 0,
             health: 10,

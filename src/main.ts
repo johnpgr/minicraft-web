@@ -1,4 +1,3 @@
-import * as THREE from "three"
 import { Palette } from "./game/assets/Palette"
 import { State } from "./game/State"
 import { Input } from "./game/input/Input"
@@ -6,22 +5,23 @@ import { FrameBuilder } from "./game/render/FrameBuilder"
 import { Renderer } from "./game/render/renderer"
 import { Viewport } from "./game/render/Viewport"
 import "./index.css"
+import { ClampToEdgeWrapping, DataTexture, NearestFilter, Texture, TextureLoader } from "three"
 
 const TICK_RATE = 60
 const TICK_MS = 1000 / TICK_RATE
 
 async function loadAssets(): Promise<{
-    atlasTexture: THREE.Texture
-    paletteTexture: THREE.DataTexture
+    atlasTexture: Texture
+    paletteTexture: DataTexture
 }> {
-    const loader = new THREE.TextureLoader()
+    const loader = new TextureLoader()
     const atlasTexture = await loader.loadAsync("/assets/minicraft/icons.png")
     atlasTexture.flipY = false
-    atlasTexture.magFilter = THREE.NearestFilter
-    atlasTexture.minFilter = THREE.NearestFilter
+    atlasTexture.magFilter = NearestFilter
+    atlasTexture.minFilter = NearestFilter
     atlasTexture.generateMipmaps = false
-    atlasTexture.wrapS = THREE.ClampToEdgeWrapping
-    atlasTexture.wrapT = THREE.ClampToEdgeWrapping
+    atlasTexture.wrapS = ClampToEdgeWrapping
+    atlasTexture.wrapT = ClampToEdgeWrapping
     atlasTexture.needsUpdate = true
 
     const paletteTexture = Palette.create()
@@ -42,12 +42,12 @@ async function bootstrap(): Promise<void> {
     root.appendChild(canvas)
 
     const assets = await loadAssets()
-    const renderer = new Renderer()
+    const renderer = Renderer.create()
     renderer.init(canvas, assets)
     const initialViewport = Viewport.getRenderViewportSize()
     renderer.resize(initialViewport.width, initialViewport.height)
 
-    const input = new Input.InputController()
+    const input = Input.createInputController()
     input.bind()
 
     const state = State.create()
