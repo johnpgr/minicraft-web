@@ -1,6 +1,7 @@
 # 🎮 ATIVIDADE 2 – Análise e Evolução do Game Criado por IA
 
 > **Regras importantes**
+>
 > - **Não olhar código.**
 > - A análise deve ser feita **apenas jogando**.
 > - Compare: **jogo original escolhido** vs **jogo recriado com IA (Lovable ou similar)**.
@@ -23,7 +24,7 @@
   PC
 
 - **Link do jogo criado pela IA (primeira versão):**  
-  https://minicraft-clone-prototype.lovable.app/ 
+  https://minicraft-clone-prototype.lovable.app/
 
 - **Ferramenta de IA utilizada (ex: Lovable):**  
   Lovable
@@ -116,24 +117,24 @@
 
 Preencha a tabela comparando o que existe no jogo criado pela IA.
 
-| Elemento | Existe? (Sim/Não) | Está completo? (Sim/Parcial/Não) | Observações |
-|---|---|---|---|
-| Tela inicial | Sim | Parcial |  |
-| Menu / navegação | Sim | Sim |  |
-| Sistema de regras | Sim | Parcial  | Crafting não funciona  |
-| Condição de vitória | Não |  |  |
-| Condição de derrota | Não |  |  |
-| Progressão (níveis/fases) | Não |  |  |
-| Dificuldade / balanceamento | Não |  |  |
-| Pontuação | Não |  |  |
-| HUD (vida, tempo, score etc.) | Sim  | Parcial |  |
-| Feedback visual (animações, partículas, efeitos) | Não |  |  |
-| Feedback sonoro (música, SFX) | Não |  |  |
-| Controles / responsividade | Sim | Parcial | Bugado |
-| Tela de reinício / Game Over | Não |  |  |
-| Bugs (travamentos, colisão, input etc.) | Sim |  | Colisão com objetos do cenário bugado |
-| Identidade / estética geral | Sim | Parcial |  |
-| Narrativa / contexto | Não |  |  |
+| Elemento                                         | Existe? (Sim/Não) | Está completo? (Sim/Parcial/Não) | Observações                           |
+| ------------------------------------------------ | ----------------- | -------------------------------- | ------------------------------------- |
+| Tela inicial                                     | Sim               | Parcial                          |                                       |
+| Menu / navegação                                 | Sim               | Sim                              |                                       |
+| Sistema de regras                                | Sim               | Parcial                          | Crafting não funciona                 |
+| Condição de vitória                              | Não               |                                  |                                       |
+| Condição de derrota                              | Não               |                                  |                                       |
+| Progressão (níveis/fases)                        | Não               |                                  |                                       |
+| Dificuldade / balanceamento                      | Não               |                                  |                                       |
+| Pontuação                                        | Não               |                                  |                                       |
+| HUD (vida, tempo, score etc.)                    | Sim               | Parcial                          |                                       |
+| Feedback visual (animações, partículas, efeitos) | Não               |                                  |                                       |
+| Feedback sonoro (música, SFX)                    | Não               |                                  |                                       |
+| Controles / responsividade                       | Sim               | Parcial                          | Bugado                                |
+| Tela de reinício / Game Over                     | Não               |                                  |                                       |
+| Bugs (travamentos, colisão, input etc.)          | Sim               |                                  | Colisão com objetos do cenário bugado |
+| Identidade / estética geral                      | Sim               | Parcial                          |                                       |
+| Narrativa / contexto                             | Não               |                                  |                                       |
 
 ---
 
@@ -248,7 +249,7 @@ Por isso a priorização segue impacto direto na jogabilidade e no fechamento do
 - O que ainda ficou faltando?
 - O que a IA teve dificuldade em fazer?
 
-_Resposta:_ 
+_Resposta:_
 Foi possível modernizar a base de renderização para GPU (Three.js), substituindo a abordagem de framebuffer por chunks instanciados e sprite batching.  
 Também foi possível manter boa parte da estética pixel-art com atlas original e filtros corretos.  
 Além disso, a renderização de sprites de player e mobs foi corrigida.  

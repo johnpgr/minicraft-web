@@ -1,11 +1,11 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from "vite"
 
 export default defineConfig({
-  server: {
-    host: '::',
-    port: 8080,
-    hmr: {
-      overlay: false,
+    server: {
+        host: "::",
+        port: 8080,
+        hmr: {
+            overlay: false,
+        },
     },
-  },
-});
+})

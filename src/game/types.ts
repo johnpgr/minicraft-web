@@ -10,102 +10,101 @@ export enum TileType {
 }
 
 export interface GameTile {
-    type: TileType;
-    damage: number;
+    type: TileType
+    damage: number
 }
 
 export interface Position {
-    x: number;
-    y: number;
+    x: number
+    y: number
 }
 
-export type Direction = 'up' | 'down' | 'left' | 'right';
+export type Direction = "up" | "down" | "left" | "right"
 
 export interface PlayerState {
-    position: Position;
-    direction: Direction;
-    health: number;
-    maxHealth: number;
-    stamina: number;
-    maxStamina: number;
-    staminaRecharge: number;
-    staminaRechargeDelay: number;
-    moving: boolean;
-    hurtTime: number;
-    invulnerableTime: number;
-    attackTime: number;
-    attackDir: Direction;
-    attackCooldown: number;
-    score: number;
+    position: Position
+    direction: Direction
+    health: number
+    maxHealth: number
+    stamina: number
+    maxStamina: number
+    staminaRecharge: number
+    staminaRechargeDelay: number
+    moving: boolean
+    hurtTime: number
+    invulnerableTime: number
+    attackTime: number
+    attackDir: Direction
+    attackCooldown: number
+    score: number
 }
 
-export type EnemyKind = 'slime' | 'zombie';
+export type EnemyKind = "slime" | "zombie"
 
 export interface EnemyState {
-    id: number;
-    kind: EnemyKind;
-    position: Position;
-    direction: Direction;
-    health: number;
-    maxHealth: number;
-    level: number;
-    hurtTime: number;
-    xKnockback: number;
-    yKnockback: number;
-    walkDist: number;
-    xa: number;
-    ya: number;
-    jumpTime: number;
-    randomWalkTime: number;
-    tickTime: number;
+    id: number
+    kind: EnemyKind
+    position: Position
+    direction: Direction
+    health: number
+    maxHealth: number
+    level: number
+    hurtTime: number
+    xKnockback: number
+    yKnockback: number
+    walkDist: number
+    xa: number
+    ya: number
+    jumpTime: number
+    randomWalkTime: number
+    tickTime: number
 }
 
 export interface ItemDrop {
-    id: number;
-    itemId: string;
-    name: string;
-    quantity: number;
-    position: Position;
-    velocity: Position;
-    z: number;
-    za: number;
-    age: number;
-    lifeTime: number;
+    id: number
+    itemId: string
+    name: string
+    quantity: number
+    position: Position
+    velocity: Position
+    z: number
+    za: number
+    age: number
+    lifeTime: number
 }
 
 export interface FloatingText {
-    id: number;
-    text: string;
-    position: Position;
-    velocity: Position;
-    z: number;
-    za: number;
-    age: number;
-    lifeTime: number;
-    tintCode: number;
+    id: number
+    text: string
+    position: Position
+    velocity: Position
+    z: number
+    za: number
+    age: number
+    lifeTime: number
+    tintCode: number
 }
 
 export interface InventoryItem {
-    id: string;
-    name: string;
-    quantity: number;
+    id: string
+    name: string
+    quantity: number
 }
 
-export type GameMode = 'title' | 'playing' | 'dead';
+export type GameMode = "title" | "playing" | "dead"
 
 export interface GameState {
-    map: GameTile[][];
-    player: PlayerState;
-    enemies: EnemyState[];
-    drops: ItemDrop[];
-    floatingTexts: FloatingText[];
-    inventory: InventoryItem[];
-    mode: GameMode;
-    tickCount: number;
-    gameTime: number;
+    map: GameTile[][]
+    player: PlayerState
+    enemies: EnemyState[]
+    drops: ItemDrop[]
+    floatingTexts: FloatingText[]
+    inventory: InventoryItem[]
+    mode: GameMode
+    tickCount: number
+    gameTime: number
 }
 
-export const MAP_SIZE = 128;
+export const MAP_SIZE = 128
 
-export const FONT_CHARS =
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZ      ' + '0123456789.,!?\'"-+=/\\%()<>:;     ';
+export const FONT_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ      " + "0123456789.,!?'\"-+=/\\%()<>:;     "

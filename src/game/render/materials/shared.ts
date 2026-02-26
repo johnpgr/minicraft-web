@@ -1,11 +1,11 @@
-import * as THREE from 'three';
-import spriteVertexShader from './shaders/sprite.vert.glsl?raw';
-import spriteFragmentShader from './shaders/sprite.frag.glsl?raw';
+import * as THREE from "three"
+import spriteVertexShader from "./shaders/sprite.vert.glsl?raw"
+import spriteFragmentShader from "./shaders/sprite.frag.glsl?raw"
 
 export interface MaterialUniforms {
-    uAtlas: { value: THREE.Texture };
-    uPalette: { value: THREE.Texture };
-    uPixelSnap: { value: number };
+    uAtlas: { value: THREE.Texture }
+    uPalette: { value: THREE.Texture }
+    uPixelSnap: { value: number }
 }
 
 export function createSpriteShaderMaterial(
@@ -20,5 +20,5 @@ export function createSpriteShaderMaterial(
         fragmentShader: spriteFragmentShader,
         uniforms,
         ...options,
-    });
+    })
 }
