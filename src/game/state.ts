@@ -1,4 +1,4 @@
-import { GameTile, PlayerState, InventoryItem, Direction, MAP_SIZE, SOLID_TILES, TileType } from './types';
+import { GameTile, PlayerState, InventoryItem, Direction, MAP_SIZE, TileType } from './types';
 import { generateMap } from './mapgen';
 import { RECIPES } from './recipes';
 
