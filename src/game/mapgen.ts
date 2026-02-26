@@ -1,4 +1,4 @@
-import { GameTile, TileType, MAP_SIZE } from './types';
+import { GameTile, MAP_SIZE, TileType } from './types';
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
@@ -49,6 +49,10 @@ function fractalNoise2D(x: number, y: number, seed: number): number {
   return total / normalization;
 }
 
+function createTile(type: TileType): GameTile {
+  return { type, damage: 0 };
+}
+
 export function generateMap(seed?: number): GameTile[][] {
   const resolvedSeed = seed ?? Math.floor(Math.random() * 1_000_000);
   const map: GameTile[][] = [];
@@ -61,34 +65,44 @@ export function generateMap(seed?: number): GameTile[][] {
       const ny = y / MAP_SIZE;
 
       const elevation = fractalNoise2D(nx * 6, ny * 6, resolvedSeed);
-      const treeValue = fractalNoise2D(nx * 10, ny * 10, resolvedSeed + 101);
+      const detail = fractalNoise2D(nx * 10, ny * 10, resolvedSeed + 71);
 
       let type: TileType;
-      if (elevation < -0.3) {
+      if (elevation < -0.35) {
         type = TileType.WATER;
-      } else if (elevation < -0.1) {
+      } else if (elevation < -0.15) {
         type = TileType.SAND;
-      } else if (elevation > 0.5) {
-        type = TileType.STONE;
-      } else if (treeValue > 0.4 && elevation > 0.0) {
+      } else if (elevation > 0.55) {
+        type = TileType.ROCK;
+      } else if (detail > 0.43 && elevation > -0.05) {
         type = TileType.TREE;
+      } else if (detail < -0.6 && elevation > -0.1) {
+        type = TileType.FLOWER;
       } else {
         type = TileType.GRASS;
       }
 
-      row.push({ type, harvested: false });
+      row.push(createTile(type));
     }
 
     map.push(row);
   }
 
+  for (let i = 0; i < (MAP_SIZE * MAP_SIZE) / 100; i += 1) {
+    const x = Math.floor(Math.random() * MAP_SIZE);
+    const y = Math.floor(Math.random() * MAP_SIZE);
+    if (map[y][x].type === TileType.SAND && Math.random() < 0.25) {
+      map[y][x] = createTile(TileType.CACTUS);
+    }
+  }
+
   const center = Math.floor(MAP_SIZE / 2);
-  for (let dy = -2; dy <= 2; dy += 1) {
-    for (let dx = -2; dx <= 2; dx += 1) {
-      const tileX = center + dx;
-      const tileY = center + dy;
-      if (tileX >= 0 && tileX < MAP_SIZE && tileY >= 0 && tileY < MAP_SIZE) {
-        map[tileY][tileX] = { type: TileType.GRASS, harvested: false };
+  for (let dy = -3; dy <= 3; dy += 1) {
+    for (let dx = -3; dx <= 3; dx += 1) {
+      const x = center + dx;
+      const y = center + dy;
+      if (x >= 0 && y >= 0 && x < MAP_SIZE && y < MAP_SIZE) {
+        map[y][x] = createTile(TileType.GRASS);
       }
     }
   }

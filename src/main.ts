@@ -1,461 +1,756 @@
 import * as THREE from 'three';
-import { RECIPES } from './game/recipes';
-import { canMoveTo, craftItem, createInitialState, harvestTile, type GameState } from './game/state';
-import type { Direction } from './game/types';
-import { getItemIcon, getPlayerTexture, getTileTexture } from './game/textures';
+import { colorGet, createPaletteTexture } from './game/assets/palette';
+import { tickGame, type InputState, createInitialState, findInventoryAmount } from './game/state';
+import { Renderer } from './game/render/renderer';
+import type { RenderFrame, SpriteInstance, TileInstance, UiSpriteInstance } from './game/render/types';
+import { FONT_CHARS, type Direction, type GameState, TileType } from './game/types';
 import './index.css';
 
-const MOVE_SPEED = 4;
-const TARGET_VISIBLE_TILES_AT_MIN_DIMENSION = 24;
-const CAMERA_LERP = 0.1;
-const TILE_Z = 0;
-const PLAYER_Z = 0.1;
+const TICK_RATE = 60;
+const TICK_MS = 1000 / TICK_RATE;
 
-const root = document.getElementById('root');
-if (!root) {
-  throw new Error('Missing #root element');
-}
+const PLAYER_TINT = colorGet(-1, 100, 220, 532);
+const PLAYER_HURT_TINT = colorGet(-1, 555, 555, 555);
+const ZOMBIE_TINT = colorGet(-1, 10, 252, 50);
+const SLIME_TINT = colorGet(-1, 10, 252, 555);
+const TEXT_TINT = colorGet(-1, 555, 555, 555);
+const UI_TINT = colorGet(-1, 555, 555, 555);
+const UI_DIM_TINT = colorGet(-1, 333, 333, 333);
+const FONT_ROW = 30;
+const SPRITE_LEFT_X = -0.25;
+const SPRITE_RIGHT_X = 0.25;
+const SPRITE_TOP_Y = -7 / 16;
+const SPRITE_BOTTOM_Y = 1 / 16;
 
-const app = document.createElement('div');
-app.className = 'game-app';
-root.appendChild(app);
-
-const titleScreen = document.createElement('div');
-titleScreen.className = 'title-screen';
-app.appendChild(titleScreen);
-
-const title = document.createElement('h1');
-title.textContent = 'MINICRAFT';
-titleScreen.appendChild(title);
-
-const subtitle = document.createElement('p');
-subtitle.className = 'subtitle';
-subtitle.textContent = 'Prototipo Web - Explore, colete e crie!';
-titleScreen.appendChild(subtitle);
-
-const playButton = document.createElement('button');
-playButton.id = 'play-button';
-playButton.type = 'button';
-playButton.textContent = 'PLAY';
-titleScreen.appendChild(playButton);
-
-const controls = document.createElement('div');
-controls.className = 'controls';
-controls.innerHTML = `
-  <p>WASD / Setas - Mover</p>
-  <p>ESPACO - Coletar recurso</p>
-  <p>C - Crafting</p>
-`;
-titleScreen.appendChild(controls);
-
-const viewport = document.createElement('div');
-viewport.className = 'viewport is-hidden';
-app.appendChild(viewport);
-
-const hud = document.createElement('div');
-hud.className = 'hud';
-viewport.appendChild(hud);
-
-const craftingOverlay = document.createElement('div');
-craftingOverlay.className = 'crafting-overlay is-hidden';
-viewport.appendChild(craftingOverlay);
-
-const hint = document.createElement('div');
-hint.className = 'hint';
-hint.textContent = 'WASD: mover | ESPACO: coletar | C: crafting';
-viewport.appendChild(hint);
-
-let started = false;
-let state = createInitialState();
-state.gameStarted = true;
-
-const pressedKeys = new Set<string>();
-
-let renderer: THREE.WebGLRenderer | null = null;
-let scene: THREE.Scene | null = null;
-let camera: THREE.OrthographicCamera | null = null;
-
-let tileGeometry: THREE.PlaneGeometry | null = null;
-let playerGeometry: THREE.PlaneGeometry | null = null;
-const tileMaterials = new Map<string, THREE.MeshBasicMaterial>();
-const tileMeshes: THREE.Mesh[][] = [];
-
-let playerMaterial: THREE.MeshBasicMaterial | null = null;
-let playerMesh: THREE.Mesh | null = null;
-
-let directionFrame = 0;
-let frameTimer = 0;
-let lastDirection: Direction = state.player.direction;
-let lastFrame = 0;
-let lastTimestamp = performance.now();
-
-function getTileMaterial(tileType: number, harvested: boolean): THREE.MeshBasicMaterial {
-  const key = `${tileType}-${harvested}`;
-  const cached = tileMaterials.get(key);
-  if (cached) {
-    return cached;
+function getTileType(state: GameState, x: number, y: number): TileType | null {
+  if (y < 0 || y >= state.map.length || x < 0 || x >= state.map[y].length) {
+    return null;
   }
-
-  const material = new THREE.MeshBasicMaterial({ map: getTileTexture(tileType, harvested) });
-  tileMaterials.set(key, material);
-  return material;
+  return state.map[y][x].type;
 }
 
-function updateProjection(): void {
-  if (!renderer || !camera) {
+function pushTile(
+  output: TileInstance[],
+  x: number,
+  y: number,
+  frameId: number,
+  tintCode: number,
+  flipBits = 0,
+): void {
+  output.push({
+    worldX: x,
+    worldY: y,
+    scale: 0.5,
+    tileId: frameId,
+    variant: 0,
+    flipBits,
+    tintCode,
+  });
+}
+
+function pushTileQuad(
+  output: TileInstance[],
+  tileX: number,
+  tileY: number,
+  frames: [number, number, number, number],
+  tints: [number, number, number, number],
+  flips: [number, number, number, number] = [0, 0, 0, 0],
+): void {
+  pushTile(output, tileX - 0.25, tileY - 0.25, frames[0], tints[0], flips[0]);
+  pushTile(output, tileX + 0.25, tileY - 0.25, frames[1], tints[1], flips[1]);
+  pushTile(output, tileX - 0.25, tileY + 0.25, frames[2], tints[2], flips[2]);
+  pushTile(output, tileX + 0.25, tileY + 0.25, frames[3], tints[3], flips[3]);
+}
+
+function pushGrassTile(state: GameState, x: number, y: number, output: TileInstance[]): void {
+  const connectsToGrass = (type: TileType | null): boolean =>
+    type === TileType.GRASS || type === TileType.TREE || type === TileType.FLOWER;
+
+  const u = !connectsToGrass(getTileType(state, x, y - 1));
+  const d = !connectsToGrass(getTileType(state, x, y + 1));
+  const l = !connectsToGrass(getTileType(state, x - 1, y));
+  const r = !connectsToGrass(getTileType(state, x + 1, y));
+
+  const col = colorGet(141, 141, 252, 252);
+  const transition = colorGet(30, 141, 252, 322);
+
+  const frames: [number, number, number, number] = [
+    !u && !l ? 0 : (l ? 11 : 12) + (u ? 0 : 1) * 32,
+    !u && !r ? 1 : (r ? 13 : 12) + (u ? 0 : 1) * 32,
+    !d && !l ? 2 : (l ? 11 : 12) + (d ? 2 : 1) * 32,
+    !d && !r ? 3 : (r ? 13 : 12) + (d ? 2 : 1) * 32,
+  ];
+
+  const tints: [number, number, number, number] = [
+    !u && !l ? col : transition,
+    !u && !r ? col : transition,
+    !d && !l ? col : transition,
+    !d && !r ? col : transition,
+  ];
+
+  pushTileQuad(output, x, y, frames, tints);
+}
+
+function pushSandTile(state: GameState, x: number, y: number, output: TileInstance[]): void {
+  const connectsToSand = (type: TileType | null): boolean => type === TileType.SAND || type === TileType.CACTUS;
+  const u = !connectsToSand(getTileType(state, x, y - 1));
+  const d = !connectsToSand(getTileType(state, x, y + 1));
+  const l = !connectsToSand(getTileType(state, x - 1, y));
+  const r = !connectsToSand(getTileType(state, x + 1, y));
+  const ul = !connectsToSand(getTileType(state, x - 1, y - 1));
+  const dr = !connectsToSand(getTileType(state, x + 1, y + 1));
+
+  const col = colorGet(550, 550, 121, 121);
+  const transition = colorGet(440, 550, 141, 322);
+
+  const tl = !u && !l ? (!ul ? 0 : 3 + 1 * 32) : (l ? 11 : 12) + (u ? 0 : 1) * 32;
+  const tr = !u && !r ? 1 : (r ? 13 : 12) + (u ? 0 : 1) * 32;
+  const bl = !d && !l ? 2 : (l ? 11 : 12) + (d ? 2 : 1) * 32;
+  const br = !d && !r ? (!dr ? 3 : 3 + 1 * 32) : (r ? 13 : 12) + (d ? 2 : 1) * 32;
+
+  const tints: [number, number, number, number] = [
+    !u && !l ? col : transition,
+    !u && !r ? col : transition,
+    !d && !l ? col : transition,
+    !d && !r ? col : transition,
+  ];
+
+  pushTileQuad(output, x, y, [tl, tr, bl, br], tints);
+}
+
+function pushWaterTile(state: GameState, x: number, y: number, tick: number, output: TileInstance[]): void {
+  const liquid = (type: TileType | null): boolean => type === TileType.WATER;
+  const sand = (type: TileType | null): boolean => type === TileType.SAND;
+
+  const u = !liquid(getTileType(state, x, y - 1));
+  const d = !liquid(getTileType(state, x, y + 1));
+  const l = !liquid(getTileType(state, x - 1, y));
+  const r = !liquid(getTileType(state, x + 1, y));
+
+  const su = sand(getTileType(state, x, y - 1));
+  const sd = sand(getTileType(state, x, y + 1));
+  const sl = sand(getTileType(state, x - 1, y));
+  const sr = sand(getTileType(state, x + 1, y));
+
+  const col = colorGet(5, 5, 115, 115);
+  const transition1 = colorGet(3, 5, 115, -1);
+  const transition2 = colorGet(4, 5, 115, 332);
+  const anim = (salt: number): number => Math.abs((x * 97_531 + y * 31_777 + tick * 131 + salt * 71) | 0) % 4;
+
+  const frames: [number, number, number, number] = [
+    !u && !l ? anim(0) : (l ? 14 : 15) + (u ? 0 : 1) * 32,
+    !u && !r ? anim(1) : (r ? 16 : 15) + (u ? 0 : 1) * 32,
+    !d && !l ? anim(2) : (l ? 14 : 15) + (d ? 2 : 1) * 32,
+    !d && !r ? anim(3) : (r ? 16 : 15) + (d ? 2 : 1) * 32,
+  ];
+
+  const flips: [number, number, number, number] = [
+    !u && !l ? anim(4) : 0,
+    !u && !r ? anim(5) : 0,
+    !d && !l ? anim(6) : 0,
+    !d && !r ? anim(7) : 0,
+  ];
+
+  const tints: [number, number, number, number] = [
+    !u && !l ? col : su || sl ? transition2 : transition1,
+    !u && !r ? col : su || sr ? transition2 : transition1,
+    !d && !l ? col : sd || sl ? transition2 : transition1,
+    !d && !r ? col : sd || sr ? transition2 : transition1,
+  ];
+
+  pushTileQuad(output, x, y, frames, tints, flips);
+}
+
+function pushRockTile(state: GameState, x: number, y: number, output: TileInstance[]): void {
+  const rock = (type: TileType | null): boolean => type === TileType.ROCK;
+  const u = !rock(getTileType(state, x, y - 1));
+  const d = !rock(getTileType(state, x, y + 1));
+  const l = !rock(getTileType(state, x - 1, y));
+  const r = !rock(getTileType(state, x + 1, y));
+  const ul = !rock(getTileType(state, x - 1, y - 1));
+  const ur = !rock(getTileType(state, x + 1, y - 1));
+  const dl = !rock(getTileType(state, x - 1, y + 1));
+  const dr = !rock(getTileType(state, x + 1, y + 1));
+
+  const col = colorGet(444, 444, 333, 333);
+  const transition = colorGet(111, 444, 555, 322);
+
+  const frameTl = !u && !l ? (!ul ? 0 : 7 + 0 * 32) : (l ? 6 : 5) + (u ? 2 : 1) * 32;
+  const frameTr = !u && !r ? (!ur ? 1 : 8 + 0 * 32) : (r ? 4 : 5) + (u ? 2 : 1) * 32;
+  const frameBl = !d && !l ? (!dl ? 2 : 7 + 1 * 32) : (l ? 6 : 5) + (d ? 0 : 1) * 32;
+  const frameBr = !d && !r ? (!dr ? 3 : 8 + 1 * 32) : (r ? 4 : 5) + (d ? 0 : 1) * 32;
+
+  const flipTl = !u && !l && !ul ? 0 : 3;
+  const flipTr = !u && !r && !ur ? 0 : 3;
+  const flipBl = !d && !l && !dl ? 0 : 3;
+  const flipBr = !d && !r && !dr ? 0 : 3;
+
+  const tintTl = !u && !l && !ul ? col : transition;
+  const tintTr = !u && !r && !ur ? col : transition;
+  const tintBl = !d && !l && !dl ? col : transition;
+  const tintBr = !d && !r && !dr ? col : transition;
+
+  pushTileQuad(
+    output,
+    x,
+    y,
+    [frameTl, frameTr, frameBl, frameBr],
+    [tintTl, tintTr, tintBl, tintBr],
+    [flipTl, flipTr, flipBl, flipBr],
+  );
+}
+
+function pushTreeTile(state: GameState, x: number, y: number, output: TileInstance[]): void {
+  const tree = (type: TileType | null): boolean => type === TileType.TREE;
+  const u = tree(getTileType(state, x, y - 1));
+  const l = tree(getTileType(state, x - 1, y));
+  const r = tree(getTileType(state, x + 1, y));
+  const d = tree(getTileType(state, x, y + 1));
+  const ul = tree(getTileType(state, x - 1, y - 1));
+  const ur = tree(getTileType(state, x + 1, y - 1));
+  const dl = tree(getTileType(state, x - 1, y + 1));
+  const dr = tree(getTileType(state, x + 1, y + 1));
+
+  const col = colorGet(10, 30, 151, 141);
+  const barkCol1 = colorGet(10, 30, 430, 141);
+  const barkCol2 = colorGet(10, 30, 320, 141);
+
+  const tlConnected = u && ul && l;
+  const trConnected = u && ur && r;
+  const blConnected = d && dl && l;
+  const brConnected = d && dr && r;
+
+  const frames: [number, number, number, number] = [
+    tlConnected ? 10 + 1 * 32 : 9,
+    trConnected ? 10 + 2 * 32 : 10,
+    blConnected ? 10 + 2 * 32 : 9 + 1 * 32,
+    brConnected ? 10 + 1 * 32 : 10 + 3 * 32,
+  ];
+
+  const tints: [number, number, number, number] = [
+    col,
+    trConnected ? barkCol2 : col,
+    blConnected ? barkCol2 : barkCol1,
+    brConnected ? col : barkCol2,
+  ];
+
+  pushTileQuad(output, x, y, frames, tints);
+}
+
+function buildTileInstances(state: GameState, x: number, y: number, tick: number, output: TileInstance[]): void {
+  const tileType = state.map[y][x].type;
+  if (tileType === TileType.GRASS) {
+    pushGrassTile(state, x, y, output);
     return;
   }
-
-  const width = window.innerWidth;
-  const height = window.innerHeight;
-  const minDimension = Math.min(width, height);
-  const adaptiveZoom = Math.max(8, Math.floor(minDimension / TARGET_VISIBLE_TILES_AT_MIN_DIMENSION));
-
-  camera.left = -width / 2;
-  camera.right = width / 2;
-  camera.top = height / 2;
-  camera.bottom = -height / 2;
-  camera.zoom = adaptiveZoom;
-  camera.updateProjectionMatrix();
-
-  renderer.setSize(width, height);
-}
-
-function inventoryAmount(itemId: string): number {
-  return state.inventory.find((item) => item.id === itemId)?.quantity ?? 0;
-}
-
-function canCraft(recipeId: string): boolean {
-  const recipe = RECIPES.find((entry) => entry.id === recipeId);
-  if (!recipe) {
-    return false;
-  }
-
-  return recipe.ingredients.every((ingredient) => inventoryAmount(ingredient.itemId) >= ingredient.quantity);
-}
-
-function renderHud(): void {
-  const healthPercent = (state.player.health / state.player.maxHealth) * 100;
-
-  const inventoryHtml =
-    state.inventory.length === 0
-      ? ''
-      : `
-      <div class="inventory-panel">
-        <div class="inventory-title">INVENTARIO</div>
-        ${state.inventory
-          .map(
-            (item) => `
-            <div class="inventory-row">
-              <span class="inventory-icon">${getItemIcon(item.id)}</span>
-              <span>${item.name}</span>
-              <span class="inventory-qty">x${item.quantity}</span>
-            </div>
-          `,
-          )
-          .join('')}
-      </div>
-    `;
-
-  hud.innerHTML = `
-    <div class="health-row">
-      <span class="heart">❤</span>
-      <div class="health-track">
-        <div class="health-fill" style="width: ${healthPercent}%"></div>
-      </div>
-      <span class="health-text">${state.player.health}/${state.player.maxHealth}</span>
-    </div>
-    ${inventoryHtml}
-  `;
-}
-
-function renderCraftingMenu(): void {
-  craftingOverlay.classList.toggle('is-hidden', !state.craftingOpen);
-  if (!state.craftingOpen) {
-    craftingOverlay.innerHTML = '';
+  if (tileType === TileType.FLOWER) {
+    pushGrassTile(state, x, y, output);
+    const flowerTint = colorGet(10, 141, 555, 440);
+    const shape = (x + y) % 2;
+    if (shape === 0) {
+      pushTile(output, x - 0.25, y - 0.25, 1 + 1 * 32, flowerTint, 0);
+      pushTile(output, x + 0.25, y + 0.25, 1 + 1 * 32, flowerTint, 0);
+    } else {
+      pushTile(output, x + 0.25, y - 0.25, 1 + 1 * 32, flowerTint, 0);
+      pushTile(output, x - 0.25, y + 0.25, 1 + 1 * 32, flowerTint, 0);
+    }
     return;
   }
-
-  craftingOverlay.innerHTML = `
-    <div class="crafting-panel">
-      <div class="crafting-header">
-        <h2>CRAFTING</h2>
-        <button type="button" data-close-crafting="true">ESC</button>
-      </div>
-      ${RECIPES.map((recipe) => {
-        const available = canCraft(recipe.id);
-        const ingredients = recipe.ingredients
-          .map((ingredient) => {
-            const amount = inventoryAmount(ingredient.itemId);
-            const metClass = amount >= ingredient.quantity ? 'ok' : 'missing';
-            return `<span class="ingredient ${metClass}">${getItemIcon(ingredient.itemId)} ${ingredient.itemId} ${amount}/${ingredient.quantity}</span>`;
-          })
-          .join('');
-
-        return `
-          <button type="button" class="recipe ${available ? 'available' : ''}" data-recipe-id="${recipe.id}" ${
-            available ? '' : 'disabled'
-          }>
-            <div class="recipe-name">${getItemIcon(recipe.result.itemId)} ${recipe.name}</div>
-            <div class="recipe-ingredients">${ingredients}</div>
-          </button>
-        `;
-      }).join('')}
-      <p class="crafting-footnote">Clique para craftar | C ou ESC para fechar</p>
-    </div>
-  `;
-}
-
-function refreshHarvestedTiles(previous: GameState, next: GameState): void {
-  if (previous.map === next.map || tileMeshes.length === 0) {
+  if (tileType === TileType.SAND) {
+    pushSandTile(state, x, y, output);
     return;
   }
+  if (tileType === TileType.WATER) {
+    pushWaterTile(state, x, y, tick, output);
+    return;
+  }
+  if (tileType === TileType.ROCK) {
+    pushRockTile(state, x, y, output);
+    return;
+  }
+  if (tileType === TileType.TREE) {
+    pushTreeTile(state, x, y, output);
+    return;
+  }
+  if (tileType === TileType.DIRT) {
+    const dirt = colorGet(322, 322, 322, 322);
+    pushTileQuad(output, x, y, [0, 1, 2, 3], [dirt, dirt, dirt, dirt]);
+    return;
+  }
+  const cactus = colorGet(-1, 10, 40, 50);
+  pushTileQuad(
+    output,
+    x,
+    y,
+    [8 + 2 * 32, 9 + 2 * 32, 8 + 3 * 32, 9 + 3 * 32],
+    [cactus, cactus, cactus, cactus],
+  );
+}
 
-  for (let y = 0; y < next.map.length; y += 1) {
-    for (let x = 0; x < next.map[y].length; x += 1) {
-      const before = previous.map[y][x];
-      const after = next.map[y][x];
-      if (before.harvested !== after.harvested || before.type !== after.type) {
-        tileMeshes[y][x].material = getTileMaterial(after.type, after.harvested);
+function createMobFrame(
+  direction: Direction,
+  walkDist: number,
+): { frameLeft: number; frameRight: number; flipTop: number; flipBottom: number } {
+  let xt = 0;
+  let yt = 14;
+
+  let flip1 = (walkDist >> 3) & 1;
+  let flip2 = (walkDist >> 3) & 1;
+
+  if (direction === 'up') {
+    xt += 2;
+  }
+
+  if (direction === 'left' || direction === 'right') {
+    flip1 = 0;
+    flip2 = (walkDist >> 4) & 1;
+    if (direction === 'left') {
+      flip1 = 1;
+    }
+    xt += 4 + ((walkDist >> 3) & 1) * 2;
+  }
+
+  return {
+    frameLeft: xt + yt * 32,
+    frameRight: xt + 1 + yt * 32,
+    flipTop: flip1,
+    flipBottom: flip2,
+  };
+}
+
+class KeyAction {
+  presses = 0;
+  absorbs = 0;
+  down = false;
+  clicked = false;
+
+  toggle(pressed: boolean): void {
+    if (pressed !== this.down) {
+      this.down = pressed;
+    }
+    if (pressed) {
+      this.presses += 1;
+    }
+  }
+
+  tick(): void {
+    if (this.absorbs < this.presses) {
+      this.absorbs += 1;
+      this.clicked = true;
+    } else {
+      this.clicked = false;
+    }
+  }
+}
+
+class InputController {
+  up = new KeyAction();
+  down = new KeyAction();
+  left = new KeyAction();
+  right = new KeyAction();
+  attack = new KeyAction();
+  menu = new KeyAction();
+
+  private allKeys = [this.up, this.down, this.left, this.right, this.attack, this.menu];
+
+  tick(): void {
+    for (const key of this.allKeys) key.tick();
+  }
+
+  releaseAll(): void {
+    for (const key of this.allKeys) key.down = false;
+  }
+
+  bind(): void {
+    window.addEventListener('keydown', (event) => this.toggle(event, true));
+    window.addEventListener('keyup', (event) => this.toggle(event, false));
+    window.addEventListener('blur', () => this.releaseAll());
+  }
+
+  private toggle(event: KeyboardEvent, pressed: boolean): void {
+    const code = event.code;
+
+    if (code === 'ArrowUp' || code === 'KeyW' || code === 'Numpad8') this.up.toggle(pressed);
+    if (code === 'ArrowDown' || code === 'KeyS' || code === 'Numpad2') this.down.toggle(pressed);
+    if (code === 'ArrowLeft' || code === 'KeyA' || code === 'Numpad4') this.left.toggle(pressed);
+    if (code === 'ArrowRight' || code === 'KeyD' || code === 'Numpad6') this.right.toggle(pressed);
+
+    if (code === 'Space' || code === 'ControlLeft' || code === 'KeyC' || code === 'Numpad0') {
+      this.attack.toggle(pressed);
+      event.preventDefault();
+    }
+
+    if (code === 'Tab' || code === 'Enter' || code === 'KeyX' || code === 'AltLeft') {
+      this.menu.toggle(pressed);
+      event.preventDefault();
+    }
+  }
+}
+
+function getInputState(input: InputController): InputState {
+  return {
+    up: input.up.down,
+    down: input.down.down,
+    left: input.left.down,
+    right: input.right.down,
+    attackClicked: input.attack.clicked,
+    menuClicked: input.menu.clicked,
+  };
+}
+
+function addTextSprites(text: string, x: number, y: number, tintCode: number, output: UiSpriteInstance[]): void {
+  const upper = text.toUpperCase();
+  for (let i = 0; i < upper.length; i += 1) {
+    const index = FONT_CHARS.indexOf(upper[i]);
+    if (index < 0) continue;
+    output.push({
+      screenX: x + i * 8,
+      screenY: y,
+      frameId: index + FONT_ROW * 32,
+      flipBits: 0,
+      tintCode,
+    });
+  }
+}
+
+function buildRenderFrame(state: GameState, dirtyTiles: Array<{ x: number; y: number }>, width: number, height: number): RenderFrame {
+  const mapTiles: TileInstance[] = [];
+  if (state.mode !== 'title') {
+    for (let y = 0; y < state.map.length; y += 1) {
+      for (let x = 0; x < state.map[y].length; x += 1) {
+        buildTileInstances(state, x, y, state.tickCount, mapTiles);
       }
     }
   }
-}
 
-function applyState(nextState: GameState): void {
-  const previous = state;
-  state = nextState;
-  refreshHarvestedTiles(previous, nextState);
-  renderHud();
-  renderCraftingMenu();
-}
+  const sprites: SpriteInstance[] = [];
 
-function toggleCrafting(open: boolean): void {
-  applyState({ ...state, craftingOpen: open });
-}
+  if (state.mode === 'playing' || state.mode === 'dead') {
+    const walkDist = state.player.moving ? state.tickCount : 0;
+    const playerFrames = createMobFrame(state.player.direction, walkDist);
+    const playerTint = state.player.hurtTime > 0 ? PLAYER_HURT_TINT : PLAYER_TINT;
+    const px = state.player.position.x;
+    const py = state.player.position.y;
 
-function onKeyDown(event: KeyboardEvent): void {
-  if (!started) {
-    return;
-  }
+    sprites.push({
+      worldX: px + SPRITE_LEFT_X,
+      worldY: py + SPRITE_TOP_Y,
+      zLayer: 1,
+      frameId: playerFrames.flipTop ? playerFrames.frameRight : playerFrames.frameLeft,
+      flipBits: playerFrames.flipTop,
+      tintCode: playerTint,
+      alpha: 1,
+    });
+    sprites.push({
+      worldX: px + SPRITE_RIGHT_X,
+      worldY: py + SPRITE_TOP_Y,
+      zLayer: 1,
+      frameId: playerFrames.flipTop ? playerFrames.frameLeft : playerFrames.frameRight,
+      flipBits: playerFrames.flipTop,
+      tintCode: playerTint,
+      alpha: 1,
+    });
+    sprites.push({
+      worldX: px + SPRITE_LEFT_X,
+      worldY: py + SPRITE_BOTTOM_Y,
+      zLayer: 1,
+      frameId: playerFrames.flipBottom ? playerFrames.frameRight + 32 : playerFrames.frameLeft + 32,
+      flipBits: playerFrames.flipBottom,
+      tintCode: playerTint,
+      alpha: 1,
+    });
+    sprites.push({
+      worldX: px + SPRITE_RIGHT_X,
+      worldY: py + SPRITE_BOTTOM_Y,
+      zLayer: 1,
+      frameId: playerFrames.flipBottom ? playerFrames.frameLeft + 32 : playerFrames.frameRight + 32,
+      flipBits: playerFrames.flipBottom,
+      tintCode: playerTint,
+      alpha: 1,
+    });
 
-  const key = event.key.toLowerCase();
-  pressedKeys.add(key);
+    if (state.player.attackTime > 0) {
+      let ax = px;
+      let ay = py;
+      if (state.player.attackDir === 'up') ay -= 0.9;
+      if (state.player.attackDir === 'down') ay += 0.9;
+      if (state.player.attackDir === 'left') ax -= 0.9;
+      if (state.player.attackDir === 'right') ax += 0.9;
 
-  if (key === ' ' || key === 'e') {
-    event.preventDefault();
-    applyState(harvestTile(state));
-    return;
-  }
-
-  if (key === 'c') {
-    event.preventDefault();
-    toggleCrafting(!state.craftingOpen);
-    return;
-  }
-
-  if (key === 'escape') {
-    event.preventDefault();
-    toggleCrafting(false);
-  }
-}
-
-function onKeyUp(event: KeyboardEvent): void {
-  if (!started) {
-    return;
-  }
-
-  pressedKeys.delete(event.key.toLowerCase());
-}
-
-window.addEventListener('keydown', onKeyDown);
-window.addEventListener('keyup', onKeyUp);
-window.addEventListener('resize', updateProjection);
-
-craftingOverlay.addEventListener('click', (event) => {
-  if (!started) {
-    return;
-  }
-
-  const target = event.target as HTMLElement;
-
-  if (target.closest('[data-close-crafting="true"]')) {
-    toggleCrafting(false);
-    return;
-  }
-
-  const recipeButton = target.closest<HTMLButtonElement>('[data-recipe-id]');
-  if (!recipeButton?.dataset.recipeId) {
-    return;
-  }
-
-  applyState(craftItem(state, recipeButton.dataset.recipeId));
-});
-
-function updateMovement(delta: number): void {
-  if (state.craftingOpen) {
-    state.player.moving = false;
-    return;
-  }
-
-  let dx = 0;
-  let dy = 0;
-  let direction: Direction | null = null;
-
-  if (pressedKeys.has('w') || pressedKeys.has('arrowup')) {
-    dy = -1;
-    direction = 'up';
-  }
-  if (pressedKeys.has('s') || pressedKeys.has('arrowdown')) {
-    dy = 1;
-    direction = 'down';
-  }
-  if (pressedKeys.has('a') || pressedKeys.has('arrowleft')) {
-    dx = -1;
-    direction = 'left';
-  }
-  if (pressedKeys.has('d') || pressedKeys.has('arrowright')) {
-    dx = 1;
-    direction = 'right';
-  }
-
-  const moving = dx !== 0 || dy !== 0;
-
-  if (!moving) {
-    state.player.moving = false;
-    return;
-  }
-
-  const length = Math.sqrt(dx * dx + dy * dy);
-  const normalizedDx = dx / length;
-  const normalizedDy = dy / length;
-
-  const nextX = state.player.position.x + normalizedDx * MOVE_SPEED * delta;
-  const nextY = state.player.position.y + normalizedDy * MOVE_SPEED * delta;
-
-  state.player.position.x = canMoveTo(state.map, nextX, state.player.position.y) ? nextX : state.player.position.x;
-  state.player.position.y = canMoveTo(state.map, state.player.position.x, nextY) ? nextY : state.player.position.y;
-  state.player.direction = direction ?? state.player.direction;
-  state.player.moving = true;
-}
-
-function updatePlayerSprite(delta: number): void {
-  if (!playerMaterial) {
-    return;
-  }
-
-  if (state.player.moving) {
-    frameTimer += delta;
-    if (frameTimer > 0.15) {
-      directionFrame = (directionFrame + 1) % 4;
-      frameTimer = 0;
+      sprites.push({
+        worldX: ax,
+        worldY: ay,
+        zLayer: 1.4,
+        frameId: 6 + 13 * 32,
+        flipBits: 0,
+        tintCode: colorGet(-1, 555, 555, 555),
+        alpha: 1,
+      });
     }
+
+    for (const enemy of state.enemies) {
+      const enemyFrames = createMobFrame(enemy.direction, enemy.walkDist + state.tickCount);
+      const tint = enemy.hurtTime > 0 ? PLAYER_HURT_TINT : enemy.kind === 'slime' ? SLIME_TINT : ZOMBIE_TINT;
+
+      if (enemy.kind === 'slime') {
+        const slimeBase = enemy.jumpTime > 0 ? 2 + 18 * 32 : 18 * 32;
+        const jumpOffset = enemy.jumpTime > 0 ? -4 / 16 : 0;
+        sprites.push({
+          worldX: enemy.position.x + SPRITE_LEFT_X,
+          worldY: enemy.position.y + SPRITE_TOP_Y + jumpOffset,
+          zLayer: 1,
+          frameId: slimeBase,
+          flipBits: 0,
+          tintCode: tint,
+          alpha: 1,
+        });
+        sprites.push({
+          worldX: enemy.position.x + SPRITE_RIGHT_X,
+          worldY: enemy.position.y + SPRITE_TOP_Y + jumpOffset,
+          zLayer: 1,
+          frameId: slimeBase + 1,
+          flipBits: 0,
+          tintCode: tint,
+          alpha: 1,
+        });
+        sprites.push({
+          worldX: enemy.position.x + SPRITE_LEFT_X,
+          worldY: enemy.position.y + SPRITE_BOTTOM_Y + jumpOffset,
+          zLayer: 1,
+          frameId: slimeBase + 32,
+          flipBits: 0,
+          tintCode: tint,
+          alpha: 1,
+        });
+        sprites.push({
+          worldX: enemy.position.x + SPRITE_RIGHT_X,
+          worldY: enemy.position.y + SPRITE_BOTTOM_Y + jumpOffset,
+          zLayer: 1,
+          frameId: slimeBase + 33,
+          flipBits: 0,
+          tintCode: tint,
+          alpha: 1,
+        });
+      } else {
+        sprites.push({
+          worldX: enemy.position.x + SPRITE_LEFT_X,
+          worldY: enemy.position.y + SPRITE_TOP_Y,
+          zLayer: 1,
+          frameId: enemyFrames.flipTop ? enemyFrames.frameRight : enemyFrames.frameLeft,
+          flipBits: enemyFrames.flipTop,
+          tintCode: tint,
+          alpha: 1,
+        });
+        sprites.push({
+          worldX: enemy.position.x + SPRITE_RIGHT_X,
+          worldY: enemy.position.y + SPRITE_TOP_Y,
+          zLayer: 1,
+          frameId: enemyFrames.flipTop ? enemyFrames.frameLeft : enemyFrames.frameRight,
+          flipBits: enemyFrames.flipTop,
+          tintCode: tint,
+          alpha: 1,
+        });
+        sprites.push({
+          worldX: enemy.position.x + SPRITE_LEFT_X,
+          worldY: enemy.position.y + SPRITE_BOTTOM_Y,
+          zLayer: 1,
+          frameId: enemyFrames.flipBottom ? enemyFrames.frameRight + 32 : enemyFrames.frameLeft + 32,
+          flipBits: enemyFrames.flipBottom,
+          tintCode: tint,
+          alpha: 1,
+        });
+        sprites.push({
+          worldX: enemy.position.x + SPRITE_RIGHT_X,
+          worldY: enemy.position.y + SPRITE_BOTTOM_Y,
+          zLayer: 1,
+          frameId: enemyFrames.flipBottom ? enemyFrames.frameLeft + 32 : enemyFrames.frameRight + 32,
+          flipBits: enemyFrames.flipBottom,
+          tintCode: tint,
+          alpha: 1,
+        });
+      }
+    }
+
+    for (const drop of state.drops) {
+      let frame = 10 + 4 * 32;
+      let tint = colorGet(-1, 10, 30, 50);
+      if (drop.itemId === 'cloth') {
+        frame = 1 + 4 * 32;
+        tint = colorGet(-1, 25, 252, 141);
+      }
+      if (drop.itemId === 'wood') {
+        frame = 1 + 4 * 32;
+        tint = colorGet(-1, 200, 531, 430);
+      }
+      if (drop.itemId === 'stone') {
+        frame = 2 + 4 * 32;
+        tint = colorGet(-1, 111, 333, 555);
+      }
+
+      sprites.push({
+        worldX: drop.position.x,
+        worldY: drop.position.y - drop.z,
+        zLayer: 1,
+        frameId: frame,
+        flipBits: 0,
+        tintCode: tint,
+        alpha: 1,
+      });
+    }
+
+    for (const text of state.floatingTexts) {
+      for (let i = 0; i < text.text.length; i += 1) {
+        const ch = text.text[i].toUpperCase();
+        const index = FONT_CHARS.indexOf(ch);
+        if (index < 0) continue;
+        sprites.push({
+          worldX: text.position.x - (text.text.length * 0.2) + i * 0.3,
+          worldY: text.position.y - text.z - 0.7,
+          zLayer: 2,
+          frameId: index + FONT_ROW * 32,
+          flipBits: 0,
+          tintCode: text.tintCode,
+          alpha: 1,
+        });
+      }
+    }
+
+    sprites.sort((a, b) => a.worldY - b.worldY);
+  }
+
+  const uiSprites: UiSpriteInstance[] = [];
+
+  if (state.mode === 'title') {
+    const titleColor = colorGet(0, 10, 131, 551);
+    const xo = Math.floor(width / 2) - Math.floor((13 * 8) / 2);
+    const yo = Math.floor(height / 2) - 64;
+
+    for (let row = 0; row < 2; row += 1) {
+      for (let col = 0; col < 13; col += 1) {
+        uiSprites.push({
+          screenX: xo + col * 8,
+          screenY: yo + row * 8,
+          frameId: col + (row + 6) * 32,
+          flipBits: 0,
+          tintCode: titleColor,
+        });
+      }
+    }
+
+    addTextSprites('> START GAME <', Math.floor(width / 2) - 56, Math.floor(height / 2) - 8, UI_TINT, uiSprites);
+    addTextSprites('PRESS C TO START', Math.floor(width / 2) - 56, Math.floor(height / 2) + 8, UI_DIM_TINT, uiSprites);
+    addTextSprites('ARROWS OR WASD', Math.floor(width / 2) - 52, Math.floor(height / 2) + 24, UI_DIM_TINT, uiSprites);
   } else {
-    directionFrame = 0;
-    frameTimer = 0;
-  }
+    for (let i = 0; i < 10; i += 1) {
+      const healthTint = i < state.player.health ? colorGet(0, 200, 500, 533) : colorGet(0, 100, 0, 0);
+      uiSprites.push({ screenX: i * 8, screenY: height - 16, frameId: 12 * 32, flipBits: 0, tintCode: healthTint });
 
-  const directionChanged = state.player.direction !== lastDirection;
-  const frameChanged = directionFrame !== lastFrame;
-  if (directionChanged || frameChanged) {
-    playerMaterial.map = getPlayerTexture(state.player.direction, directionFrame);
-    playerMaterial.needsUpdate = true;
-    lastDirection = state.player.direction;
-    lastFrame = directionFrame;
-  }
-}
+      const staminaTint =
+        state.player.staminaRechargeDelay > 0
+          ? state.player.staminaRechargeDelay / 4 % 2 === 0
+            ? colorGet(0, 555, 0, 0)
+            : colorGet(0, 110, 0, 0)
+          : i < state.player.stamina
+            ? colorGet(0, 220, 550, 553)
+            : colorGet(0, 110, 0, 0);
 
-function renderFrame(delta: number): void {
-  if (!renderer || !scene || !camera || !playerMesh) {
-    return;
-  }
-
-  updateMovement(delta);
-  updatePlayerSprite(delta);
-
-  playerMesh.position.set(state.player.position.x, -state.player.position.y, PLAYER_Z);
-
-  const targetX = state.player.position.x;
-  const targetY = -state.player.position.y;
-  camera.position.x += (targetX - camera.position.x) * CAMERA_LERP;
-  camera.position.y += (targetY - camera.position.y) * CAMERA_LERP;
-  camera.lookAt(camera.position.x, camera.position.y, 0);
-
-  renderer.render(scene, camera);
-}
-
-function loop(now: number): void {
-  if (!started) {
-    return;
-  }
-
-  const delta = Math.min((now - lastTimestamp) / 1000, 0.05);
-  lastTimestamp = now;
-  renderFrame(delta);
-  requestAnimationFrame(loop);
-}
-
-function initThree(): void {
-  renderer = new THREE.WebGLRenderer({ antialias: false });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.domElement.className = 'game-canvas';
-  viewport.appendChild(renderer.domElement);
-
-  scene = new THREE.Scene();
-
-  camera = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.1, 100);
-  camera.position.set(state.player.position.x, -state.player.position.y, 10);
-  scene.add(camera);
-
-  tileGeometry = new THREE.PlaneGeometry(1, 1);
-  playerGeometry = new THREE.PlaneGeometry(1, 1);
-
-  for (let y = 0; y < state.map.length; y += 1) {
-    const row: THREE.Mesh[] = [];
-    for (let x = 0; x < state.map[y].length; x += 1) {
-      const tile = state.map[y][x];
-      const mesh = new THREE.Mesh(tileGeometry, getTileMaterial(tile.type, tile.harvested));
-      mesh.position.set(x, -y, TILE_Z);
-      scene.add(mesh);
-      row.push(mesh);
+      uiSprites.push({ screenX: i * 8, screenY: height - 8, frameId: 1 + 12 * 32, flipBits: 0, tintCode: staminaTint });
     }
-    tileMeshes.push(row);
+
+    addTextSprites(`SCORE ${state.player.score}`, 96, height - 16, UI_TINT, uiSprites);
+    addTextSprites(`SLIME ${findInventoryAmount(state.inventory, 'slime')}`, 96, height - 8, UI_DIM_TINT, uiSprites);
+
+    if (state.mode === 'dead') {
+      addTextSprites('YOU DIED', Math.floor(width / 2) - 28, Math.floor(height / 2) - 8, TEXT_TINT, uiSprites);
+      addTextSprites('PRESS C TO RESTART', Math.floor(width / 2) - 68, Math.floor(height / 2) + 8, UI_DIM_TINT, uiSprites);
+    }
   }
 
-  playerMaterial = new THREE.MeshBasicMaterial({
-    map: getPlayerTexture(state.player.direction, 0),
-    transparent: true,
+  return {
+    cameraX: state.player.position.x,
+    cameraY: state.player.position.y,
+    worldWidth: state.map[0].length,
+    worldHeight: state.map.length,
+    mapTiles,
+    sprites,
+    uiSprites,
+    lights: [],
+    dirtyTiles,
+  };
+}
+
+async function loadAssets(): Promise<{ atlasTexture: THREE.Texture; paletteTexture: THREE.DataTexture }> {
+  const loader = new THREE.TextureLoader();
+  const atlasTexture = await loader.loadAsync('/assets/minicraft/icons.png');
+  atlasTexture.flipY = false;
+  atlasTexture.magFilter = THREE.NearestFilter;
+  atlasTexture.minFilter = THREE.NearestFilter;
+  atlasTexture.generateMipmaps = false;
+  atlasTexture.wrapS = THREE.ClampToEdgeWrapping;
+  atlasTexture.wrapT = THREE.ClampToEdgeWrapping;
+  atlasTexture.needsUpdate = true;
+
+  const paletteTexture = createPaletteTexture();
+
+  return { atlasTexture, paletteTexture };
+}
+
+async function bootstrap(): Promise<void> {
+  if (!(window as unknown as { WebGL2RenderingContext?: unknown }).WebGL2RenderingContext) {
+    throw new Error('WebGL2 is required');
+  }
+
+  const root = document.getElementById('root');
+  if (!root) throw new Error('Missing #root');
+
+  const canvas = document.createElement('canvas');
+  canvas.className = 'game-canvas';
+  root.appendChild(canvas);
+
+  const assets = await loadAssets();
+  const renderer = new Renderer();
+  renderer.init(canvas, assets);
+  renderer.resize(window.innerWidth, window.innerHeight);
+
+  const input = new InputController();
+  input.bind();
+
+  const state = createInitialState();
+  let dirtyTiles: Array<{ x: number; y: number }> = [];
+
+  let accumulator = 0;
+  let last = performance.now();
+
+  const frame = () => {
+    const now = performance.now();
+    const delta = now - last;
+    last = now;
+    accumulator += Math.min(delta, 100);
+
+    while (accumulator >= TICK_MS) {
+      input.tick();
+      const result = tickGame(state, getInputState(input));
+      dirtyTiles = result.dirtyTiles;
+      accumulator -= TICK_MS;
+    }
+
+    const renderFrame = buildRenderFrame(state, dirtyTiles, window.innerWidth, window.innerHeight);
+    renderer.render(state, renderFrame);
+    dirtyTiles = [];
+    requestAnimationFrame(frame);
+  };
+
+  window.addEventListener('resize', () => {
+    renderer.resize(window.innerWidth, window.innerHeight);
   });
 
-  playerMesh = new THREE.Mesh(playerGeometry, playerMaterial);
-  playerMesh.position.set(state.player.position.x, -state.player.position.y, PLAYER_Z);
-  scene.add(playerMesh);
-
-  updateProjection();
+  requestAnimationFrame(frame);
 }
 
-function startGame(): void {
-  if (started) {
-    return;
+bootstrap().catch((error) => {
+  const root = document.getElementById('root');
+  if (root) {
+    root.innerHTML = '<p style="padding:16px;color:#fff;background:#111">Unable to start game.</p>';
   }
-
-  try {
-    initThree();
-  } catch (error) {
-    titleScreen.innerHTML = '<p>Nao foi possivel iniciar o jogo neste navegador.</p>';
-    console.error(error);
-    return;
-  }
-
-  started = true;
-  titleScreen.classList.add('is-hidden');
-  viewport.classList.remove('is-hidden');
-
-  renderHud();
-  renderCraftingMenu();
-
-  lastTimestamp = performance.now();
-  requestAnimationFrame(loop);
-}
-
-playButton.addEventListener('click', startGame);
+  console.error(error);
+});

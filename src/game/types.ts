@@ -1,14 +1,17 @@
 export enum TileType {
   GRASS = 0,
-  SAND = 1,
+  ROCK = 1,
   WATER = 2,
-  STONE = 3,
+  FLOWER = 3,
   TREE = 4,
+  DIRT = 5,
+  SAND = 6,
+  CACTUS = 7,
 }
 
 export interface GameTile {
   type: TileType;
-  harvested: boolean;
+  damage: number;
 }
 
 export interface Position {
@@ -23,33 +26,87 @@ export interface PlayerState {
   direction: Direction;
   health: number;
   maxHealth: number;
+  stamina: number;
+  maxStamina: number;
+  staminaRecharge: number;
+  staminaRechargeDelay: number;
   moving: boolean;
+  hurtTime: number;
+  invulnerableTime: number;
+  attackTime: number;
+  attackDir: Direction;
+  attackCooldown: number;
+  score: number;
+}
+
+export type EnemyKind = 'slime' | 'zombie';
+
+export interface EnemyState {
+  id: number;
+  kind: EnemyKind;
+  position: Position;
+  direction: Direction;
+  health: number;
+  maxHealth: number;
+  level: number;
+  hurtTime: number;
+  xKnockback: number;
+  yKnockback: number;
+  walkDist: number;
+  xa: number;
+  ya: number;
+  jumpTime: number;
+  randomWalkTime: number;
+  tickTime: number;
+}
+
+export interface ItemDrop {
+  id: number;
+  itemId: string;
+  name: string;
+  quantity: number;
+  position: Position;
+  velocity: Position;
+  z: number;
+  za: number;
+  age: number;
+  lifeTime: number;
+}
+
+export interface FloatingText {
+  id: number;
+  text: string;
+  position: Position;
+  velocity: Position;
+  z: number;
+  za: number;
+  age: number;
+  lifeTime: number;
+  tintCode: number;
 }
 
 export interface InventoryItem {
   id: string;
   name: string;
   quantity: number;
-  icon: string; // color key for rendering
-  equipped?: boolean;
 }
 
-export interface CraftingRecipe {
-  id: string;
-  name: string;
-  ingredients: { itemId: string; quantity: number }[];
-  result: { itemId: string; quantity: number };
+export type GameMode = 'title' | 'playing' | 'dead';
+
+export interface GameState {
+  map: GameTile[][];
+  player: PlayerState;
+  enemies: EnemyState[];
+  drops: ItemDrop[];
+  floatingTexts: FloatingText[];
+  inventory: InventoryItem[];
+  mode: GameMode;
+  tickCount: number;
+  gameTime: number;
 }
 
-export const MAP_SIZE = 64;
+export const MAP_SIZE = 128;
 export const TILE_SIZE = 1;
 
-export const TILE_COLORS: Record<TileType, string> = {
-  [TileType.GRASS]: '#4a7c3f',
-  [TileType.SAND]: '#c2b280',
-  [TileType.WATER]: '#3d6fb4',
-  [TileType.STONE]: '#808080',
-  [TileType.TREE]: '#2d5a1e',
-};
-
-export const SOLID_TILES = [TileType.WATER, TileType.STONE, TileType.TREE];
+export const FONT_CHARS =
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZ      ' + '0123456789.,!?\'"-+=/\\%()<>:;     ';
