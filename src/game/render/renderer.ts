@@ -67,7 +67,7 @@ export class Renderer {
     init(canvas: HTMLCanvasElement, assets: RendererAssets): void {
         this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false })
         this.renderer.setPixelRatio(1)
-        this.renderer.setSize(window.innerWidth, window.innerHeight)
+        this.renderer.setSize(window.innerWidth, window.innerHeight, false)
         this.renderer.autoClear = true
 
         this.worldScene = new THREE.Scene()
@@ -122,7 +122,7 @@ export class Renderer {
     resize(width: number, height: number): void {
         if (!this.renderer || !this.worldCamera || !this.uiCamera) return
 
-        this.renderer.setSize(width, height)
+        this.renderer.setSize(width, height, false)
         this.viewportHeight = height
 
         const halfW = width / (2 * WORLD_ZOOM)

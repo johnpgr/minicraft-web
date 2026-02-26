@@ -27,6 +27,14 @@ const SPRITE_LEFT_X = -0.25
 const SPRITE_RIGHT_X = 0.25
 const SPRITE_TOP_Y = -7 / 16
 const SPRITE_BOTTOM_Y = 1 / 16
+const RENDER_SCALE = 3
+
+function getRenderViewportSize(): { width: number; height: number } {
+    return {
+        width: Math.max(1, Math.floor(window.innerWidth / RENDER_SCALE)),
+        height: Math.max(1, Math.floor(window.innerHeight / RENDER_SCALE)),
+    }
+}
 
 function getTileType(state: GameState, x: number, y: number): TileType | null {
     if (y < 0 || y >= state.map.length || x < 0 || x >= state.map[y].length) {
@@ -805,7 +813,8 @@ async function bootstrap(): Promise<void> {
     const assets = await loadAssets()
     const renderer = new Renderer()
     renderer.init(canvas, assets)
-    renderer.resize(window.innerWidth, window.innerHeight)
+    const initialViewport = getRenderViewportSize()
+    renderer.resize(initialViewport.width, initialViewport.height)
 
     const input = new InputController()
     input.bind()
@@ -829,19 +838,16 @@ async function bootstrap(): Promise<void> {
             accumulator -= TICK_MS
         }
 
-        const renderFrame = buildRenderFrame(
-            state,
-            dirtyTiles,
-            window.innerWidth,
-            window.innerHeight,
-        )
+        const viewport = getRenderViewportSize()
+        const renderFrame = buildRenderFrame(state, dirtyTiles, viewport.width, viewport.height)
         renderer.render(state, renderFrame)
         dirtyTiles = []
         requestAnimationFrame(frame)
     }
 
     window.addEventListener("resize", () => {
-        renderer.resize(window.innerWidth, window.innerHeight)
+        const viewport = getRenderViewportSize()
+        renderer.resize(viewport.width, viewport.height)
     })
 
     requestAnimationFrame(frame)
