@@ -69,6 +69,9 @@ async function bootstrap(): Promise<void> {
 
     let accumulator = 0
     let last = performance.now()
+    let frames = 0
+    let ticks = 0
+    let lastStats = performance.now()
 
     const frame = () => {
         const now = performance.now()
@@ -81,12 +84,22 @@ async function bootstrap(): Promise<void> {
             const result = State.tick(state, Input.getInputState(input))
             dirtyTiles = result.dirtyTiles
             accumulator -= TICK_MS
+            ticks += 1
         }
 
         const viewport = Viewport.getRenderViewportSize()
         const renderFrame = FrameBuilder.buildRenderFrame(state, dirtyTiles, viewport.width, viewport.height)
         renderer.render(state, renderFrame)
+        frames += 1
         dirtyTiles = []
+
+        if (now - lastStats >= 1000) {
+            console.log(`${ticks} ticks, ${frames} fps`)
+            lastStats += 1000
+            frames = 0
+            ticks = 0
+        }
+
         requestAnimationFrame(frame)
     }
 

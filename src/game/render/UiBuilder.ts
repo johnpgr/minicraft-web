@@ -1,5 +1,4 @@
 import { Color } from "../assets/Color"
-import { State } from "../State"
 import { FONT_CHARS, type GameState } from "../types"
 import type { UiSpriteInstance } from "./types"
 
@@ -159,6 +158,19 @@ export namespace UiBuilder {
             return uiSprites
         }
 
+        const hudColumns = Math.ceil(width / 8)
+        for (let y = 0; y < 2; y += 1) {
+            for (let x = 0; x < hudColumns; x += 1) {
+                uiSprites.push({
+                    screenX: x * 8,
+                    screenY: height - 16 + y * 8,
+                    frameId: 12 * 32,
+                    flipBits: 0,
+                    tintCode: Color.get(0, 0, 0, 0),
+                })
+            }
+        }
+
         for (let i = 0; i < 10; i += 1) {
             const healthTint =
                 i < state.player.health ? Color.get(0, 200, 500, 533) : Color.get(0, 100, 0, 0)
@@ -187,15 +199,6 @@ export namespace UiBuilder {
                 tintCode: staminaTint,
             })
         }
-
-        addTextSprites(`SCORE ${state.player.score}`, 96, height - 16, UI_TINT, uiSprites)
-        addTextSprites(
-            `SLIME ${State.inventoryAmount(state.inventory, "slime")}`,
-            96,
-            height - 8,
-            UI_DIM_TINT,
-            uiSprites,
-        )
 
         if (state.mode === "paused") {
             const pauseBox = centeredFrame(width, height, 18, 5)
